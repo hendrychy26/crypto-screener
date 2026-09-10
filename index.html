@@ -1,0 +1,2206 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticker Tape Screener (Standalone)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --ink:#f6f5f1;
+    --surface:#ffffff;
+    --surface-2:#faf9f5;
+    --line:#e4e1d8;
+    --text:#1b1d22;
+    --text-dim:#6b6a63;
+    --text-faint:#9b9a90;
+    --accent:#c96a00;
+    --accent-ink:#ffffff;
+    --positive:#0f9d5c;
+    --negative:#d1373f;
+    --pos-bg:rgba(15,157,92,0.12);
+    --neg-bg:rgba(209,55,63,0.12);
+    --focus:#2d6bd6;
+    --shadow: 0 1px 2px rgba(20,20,15,0.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#0a0d12;
+      --surface:#11151d;
+      --surface-2:#161b25;
+      --line:#232a37;
+      --text:#e8ebf1;
+      --text-dim:#8890a0;
+      --text-faint:#5b6272;
+      --accent:#ff8a00;
+      --accent-ink:#1a0f00;
+      --positive:#3ddc84;
+      --negative:#ff5c5c;
+      --pos-bg:rgba(61,220,132,0.12);
+      --neg-bg:rgba(255,92,92,0.14);
+      --focus:#5b9dff;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+    font-size:14px;
+    line-height:1.45;
+  }
+  .num{font-family:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;}
+
+  a{color:var(--accent);}
+
+  .app{max-width:1360px;margin:0 auto;padding:20px 20px 60px;}
+
+  .topbar{
+    display:flex;align-items:baseline;justify-content:space-between;
+    flex-wrap:wrap;gap:10px 24px;
+    padding-bottom:16px;margin-bottom:16px;
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .mark{
+    font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:13px;
+    color:var(--accent-ink);background:var(--accent);
+    padding:3px 7px;border-radius:3px;letter-spacing:0.02em;
+  }
+  h1{
+    font-size:19px;font-weight:600;margin:0;letter-spacing:-0.01em;
+    text-wrap:balance;
+  }
+  .subtitle{color:var(--text-dim);font-size:12.5px;}
+  .status-cluster{display:flex;align-items:center;gap:16px;font-size:12.5px;color:var(--text-dim);flex-wrap:wrap;}
+  .status-cluster .num{color:var(--text);}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;position:relative;top:-1px;}
+  .dot.live{background:var(--positive);box-shadow:0 0 0 3px var(--pos-bg);}
+  .dot.down{background:var(--negative);box-shadow:0 0 0 3px var(--neg-bg);}
+  .dot.pending{background:var(--text-faint);}
+
+  .mode-tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .mode-tab{
+    all:unset;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;
+    color:var(--text-dim);background:var(--surface);border:1px solid var(--line);
+  }
+  .mode-tab:hover{color:var(--text);}
+  .mode-tab.active{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);}
+  .mode-tab:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+
+  .banner{
+    display:none;padding:12px 16px;border-radius:8px;margin-bottom:16px;
+    border:1px solid var(--line);background:var(--surface-2);font-size:13px;
+    align-items:center;gap:10px;
+  }
+  .banner.show{display:flex;}
+  .banner.err{border-color:var(--negative);}
+  .banner strong{font-weight:600;}
+
+  .controls{
+    display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow);
+  }
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label, .field-caption{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-faint);font-weight:600;
+  }
+  .checkbox-field{
+    display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);
+    text-transform:none;letter-spacing:normal;font-weight:400;cursor:pointer;
+    height:34px;
+  }
+  .checkbox-field input[type="checkbox"]{
+    width:15px;height:15px;accent-color:var(--accent);cursor:pointer;
+  }
+  input[type="text"], select{
+    background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:7px 10px;font-size:13px;font-family:inherit;
+  }
+  input[type="text"]{width:200px;}
+  input[type="text"]:focus, select:focus, button:focus-visible, th button:focus-visible{
+    outline:2px solid var(--focus);outline-offset:1px;
+  }
+  .weights{display:flex;gap:18px;flex-wrap:wrap;padding-left:14px;border-left:1px solid var(--line);}
+  .weight{display:flex;flex-direction:column;gap:5px;width:128px;}
+  .weight .row{display:flex;justify-content:space-between;font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-faint);font-weight:600;}
+  .weight .row .val{color:var(--accent);font-family:'IBM Plex Mono',monospace;}
+  input[type="range"]{
+    -webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;
+    background:var(--line);outline:none;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;
+    background:var(--accent);cursor:pointer;border:2px solid var(--surface);box-shadow:var(--shadow);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer;border:2px solid var(--surface);
+  }
+  .spacer{flex:1;}
+  .hidden-link{font-size:12px;color:var(--text-dim);background:none;border:none;cursor:pointer;padding:7px 0;text-decoration:underline;text-underline-offset:2px;font-family:inherit;}
+  .hidden-link:hover{color:var(--text);}
+  .saved-flag{
+    font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;
+    color:var(--positive);opacity:0;transition:opacity 0.25s ease;padding-bottom:7px;
+  }
+  .saved-flag.show{opacity:1;}
+  @media (prefers-reduced-motion: reduce){ .saved-flag{transition:none;} }
+
+  .table-wrap{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    overflow-x:auto;box-shadow:var(--shadow);
+  }
+  table{border-collapse:collapse;width:100%;min-width:900px;}
+  thead th{
+    position:sticky;top:0;background:var(--surface-2);z-index:1;
+    border-bottom:1px solid var(--line);
+    padding:0;
+  }
+  thead th button{
+    all:unset;display:flex;align-items:center;gap:5px;cursor:pointer;
+    width:100%;padding:10px 14px;font-size:11px;text-transform:uppercase;
+    letter-spacing:0.06em;color:var(--text-dim);font-weight:600;white-space:nowrap;
+  }
+  thead th button:hover{color:var(--text);}
+  thead th.active button{color:var(--accent);}
+  thead th .arrow{font-size:9px;opacity:0.7;}
+  thead th.num-col button{justify-content:flex-end;}
+  td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-2);}
+  td.num-col{text-align:right;}
+  .sym-cell{display:flex;align-items:center;gap:9px;}
+  .sym{font-weight:600;letter-spacing:0.01em;}
+  .quote{color:var(--text-faint);font-size:11px;}
+  .rank{color:var(--text-faint);width:34px;}
+  a.sym-link{text-decoration:none;color:inherit;border-radius:5px;padding:2px 4px;margin:-2px -4px;}
+  a.sym-link:hover{background:var(--pos-bg);}
+  a.sym-link:hover .sym{color:var(--accent);}
+  a.sym-link:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .chart-ico{color:var(--text-faint);font-size:12px;line-height:1;}
+  a.sym-link:hover .chart-ico{color:var(--accent);}
+
+  .pill{
+    display:inline-block;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:600;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .pill.pos{color:var(--positive);background:var(--pos-bg);}
+  .pill.neg{color:var(--negative);background:var(--neg-bg);}
+  .pill.flat{color:var(--text-dim);background:var(--surface-2);}
+  .pill.watch{color:var(--accent);background:var(--pos-bg);}
+  .regime-badge{
+    font-size:13px;font-weight:700;padding:5px 12px;border-radius:6px;letter-spacing:0.02em;
+    display:inline-flex;align-items:center;gap:6px;cursor:help;
+  }
+  .regime-badge .dot2{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .regime-badge.pos .dot2{background:var(--positive);}
+  .regime-badge.neg .dot2{background:var(--negative);}
+  .regime-badge.flat .dot2{background:#d6a70a;}
+  .read-cell{
+    max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--text-dim);font-size:12.5px;cursor:help;
+  }
+  .watch-level{
+    margin-top:3px;font-size:11px;font-family:'IBM Plex Mono',monospace;
+    color:var(--text-faint);white-space:nowrap;cursor:help;
+  }
+
+  .score-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end;}
+  .score-bar{width:52px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;}
+  .score-bar > i{display:block;height:100%;background:var(--accent);}
+  .score-val{width:28px;text-align:right;}
+
+  .muted{color:var(--text-faint);}
+  .spin{
+    display:inline-block;width:11px;height:11px;border-radius:50%;
+    border:2px solid var(--line);border-top-color:var(--accent);
+    animation:spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce){ .spin{animation:none;} }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .hide-btn{
+    all:unset;cursor:pointer;color:var(--text-faint);font-size:14px;line-height:1;padding:2px 4px;border-radius:4px;
+  }
+  .hide-btn:hover{color:var(--negative);background:var(--neg-bg);}
+
+  tfoot td{padding:12px 14px;color:var(--text-faint);font-size:12.5px;}
+
+  .notes{
+    margin-top:16px;font-size:12.5px;color:var(--text-dim);
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  }
+  .notes summary{
+    cursor:pointer;padding:12px 16px;font-weight:600;color:var(--text);list-style:none;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .notes summary::-webkit-details-marker{display:none;}
+  .notes summary::after{content:"+";color:var(--text-faint);font-size:16px;}
+  .notes[open] summary::after{content:"–";}
+  .notes .body{padding:0 16px 16px;}
+  .notes ul{margin:6px 0 0;padding-left:18px;}
+  .notes li{margin-bottom:6px;}
+  .notes code{font-family:'IBM Plex Mono',monospace;background:var(--surface-2);padding:1px 5px;border-radius:4px;font-size:11.5px;}
+
+  .empty{padding:40px 20px;text-align:center;color:var(--text-faint);}
+
+  @media (max-width:760px){
+    .weights{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:12px;width:100%;}
+    input[type="text"]{width:100%;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="mark">$</span>
+      <div>
+        <h1>Ticker Tape Screener <span style="font-weight:400;color:var(--text-dim);">— standalone</span></h1>
+        <div class="subtitle">Live spot crypto, ranked by a weighted composite you control — real market cap from CoinGecko</div>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <span><span class="dot pending" id="statusDot"></span><span id="statusText">connecting…</span></span>
+      <span><span class="num" id="universeCount">–</span> coins tracked</span>
+      <span>updated <span class="num" id="updatedAt">–</span></span>
+      <span id="regimeBadge" class="regime-badge pill flat" title="Reading regime…"><span class="dot2"></span><span id="regimeBadgeText">Reading regime…</span></span>
+    </div>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="mode-tabs" id="modeTabs">
+    <button class="mode-tab active" data-mode="breakout">Breakout</button>
+    <button class="mode-tab" data-mode="accumulation">Accumulation</button>
+  </div>
+
+  <div class="controls">
+    <div class="field">
+      <span class="field-caption">View</span>
+      <label class="checkbox-field" title="Simple view shows one plain Opportunity score per coin instead of the full technical table. Uncheck for the full expert view with all columns, weight sliders and presets.">
+        <input type="checkbox" id="simpleView" checked>
+        <span>Simple view</span>
+      </label>
+    </div>
+    <div class="field">
+      <label for="search">Search</label>
+      <input type="text" id="search" placeholder="Symbol or word, e.g. SOL or coiled">
+    </div>
+    <div class="field">
+      <label for="pageSize">Show</label>
+      <select id="pageSize">
+        <option value="25">Top 25</option>
+        <option value="50" selected>Top 50</option>
+        <option value="100">Top 100</option>
+      </select>
+    </div>
+    <div class="field">
+      <span class="field-caption">Availability</span>
+      <label class="checkbox-field">
+        <input type="checkbox" id="bybitOnly" checked>
+        <span>Bybit perp only</span>
+      </label>
+      <label class="checkbox-field">
+        <input type="checkbox" id="hideIlliquid" checked>
+        <span>Hide illiquid</span>
+      </label>
+      <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist. Breakout tab: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid. Accumulation tab: deep discount from ATH, near its own low, contracting range, quiet volume, neutral RSI, limited dilution risk, liquid, not still making fresh lows.">
+        <input type="checkbox" id="earlyEntryOnly">
+        <span id="earlyEntryText">Early Entry only (strict)</span>
+      </label>
+    </div>
+    <div id="advancedControls" style="display:contents;">
+      <div class="field">
+        <label for="candleTimeframe">Candles</label>
+        <select id="candleTimeframe">
+          <option value="1D">Daily (~300d lookback)</option>
+          <option value="4h" selected>4H (~50d lookback)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="trendFilter">Trend</label>
+        <select id="trendFilter">
+          <option value="all" selected>All</option>
+          <option value="up">Up only</option>
+          <option value="down">Down only</option>
+          <option value="updown">Up or Down (no Mixed)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="presetSelect">Preset</label>
+        <select id="presetSelect"></select>
+      </div>
+
+      <div class="weights" id="weights"></div>
+    </div>
+
+    <div class="spacer"></div>
+    <span class="saved-flag" id="savedFlag">Saved</span>
+    <button class="hidden-link" id="resetConfig">Reset weights</button>
+    <button class="hidden-link" id="hiddenToggle" style="display:none;"></button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr id="headRow"></tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="20" class="empty">Connecting to live market data…</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td colspan="20" id="footNote"></td></tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <details class="notes">
+    <summary>About this data</summary>
+    <div class="body">
+      <p style="margin:8px 0 0;">This is a <strong>standalone HTML file</strong> (not hosted on claude.ai) so it can call public APIs directly from your browser: <strong>Crypto.com</strong> and <strong>Bybit</strong> for live tradable price/perp data, and <strong>CoinGecko</strong> for the fundamentals-grade fields (market cap, ATH/ATL, dilution, multi-timeframe momentum) that make entry analysis possible. Nothing here needs a server, an API key, or a Claude connector — open the file and it just runs.</p>
+      <ul>
+        <li><strong>Every mode was rebuilt around CoinGecko's richer per-coin data</strong> so the columns answer entry questions directly, instead of proxying them from 50-300 candle bars: <em>is this move confirmed or a wick</em> (7d momentum alongside 24h), <em>is it extended or fresh</em> (real distance from all-time-high, not a 50-bar proxy), <em>is today's push starting or already exhausted</em> (24h range position), and <em>is there a dilution trap waiting</em> (FDV/market-cap ratio). A useful side effect: Breakout mode's score no longer waits on a candle fetch to populate — Score, Read, and most columns are ready the instant tickers load; only Trend, Trend(200), TF Agree, Donch(20) Dist. and Setup still need a moment.</li>
+        <li><strong>Regime badge</strong> (top right) answers one blunt question before you look at a single coin: <em>is this backdrop even worth taking longs in?</em> It reads BTC's own 200 EMA trend plus whether BTC dominance is rising or falling (approximated by comparing BTC's 24h market-cap change against the total crypto market's 24h change, via CoinGecko's <span class="num">/global</span> endpoint), and collapses that into three states — <span class="pill neg" style="font-size:11px;">🔴 STAND DOWN</span> when BTC itself is in a downtrend (most alt longs lose here regardless of setup quality), <span class="pill flat" style="font-size:11px;">🟡 CAUTION</span> when BTC is up but capital is rotating into BTC rather than alts (dominance rising) or the trend is genuinely unclear, and <span class="pill pos" style="font-size:11px;">🟢 TRADE</span> when BTC is up and not starving alts of capital. Hover it for the full reasoning. It doesn't filter or score any row automatically — it's a check to run before trusting a green score, the same way a discretionary trader checks BTC before sizing into an alt.</li>
+        <li><strong>TF Agree</strong> compares the primary <span class="num">Candles</span> timeframe's trend against the complementary one (Daily when you're on 4H, or 4H when you're on Daily) — a fresh 4H uptrend that the Daily still disagrees with (⚠) is a much weaker case than one both timeframes confirm (✓). This is exactly the "don't take a 4H long fighting the daily trend" check a discretionary trader runs by eye on two chart tabs; here it's automatic on every row.</li>
+        <li><strong>BTC Corr</strong> is this coin's rolling correlation to BTC — bar-over-bar % returns compared over the last ~30 bars at whichever <span class="num">Candles</span> timeframe you're on, not an all-time figure, so it reflects the current regime rather than history. <span class="num">HIGH</span> (≥0.7) means it's mostly moving because BTC is moving; <span class="num">LOW</span> (&lt;0.3) means its moves are largely its own. When correlation is low <em>and</em> the coin's 24h move is the opposite sign of BTC's own 24h move — BTC down while this pushes up, or vice versa — it's flagged <span class="num">🔀</span> as genuinely diverging: real idiosyncratic strength or weakness, not just beta to BTC. Also called out directly in the Read column and searchable via <span class="num">diverging</span>.</li>
+        <li><strong>Breakout</strong> (Breakout tab) answers "did this already break out, and if so is it holding?" — separate from Setup, which only looks at the pre-breakout coil. It scans back up to 30 bars for the most recent close above the rolling 20-bar Donchian upper channel computed from the bars before it (a genuine breakout event, not just "near the top of the range"), then checks whether price has held above that trigger level since: <span class="num">🆕 Fresh</span> (triggered 0-2 bars ago), <span class="num">✅ Confirming</span> (3-15 bars ago, still holding above the trigger — a pullback-and-hold, not a failure), <span class="num">⚠ Extended</span> (16+ bars ago, still holding but old news — chasing it now has worse R:R than the original breakout), <span class="num">❌ Failed</span> (broke out, then closed back below the trigger — did not hold). <span class="num">—</span> means no breakout in the lookback window at all. Hover any badge for the exact trigger price and bars-since. Also folded into Read/Why and searchable, e.g. <span class="num">confirming breakout</span> or <span class="num">extended</span>.</li>
+        <li><strong>Setup</strong> (Breakout tab) is a strict, all-or-nothing pre-breakout checklist, shown as <span class="num">✓ Coiled</span> when every one of these holds: Donchian(20) width ≤10% (tight range), price sitting in the upper half of that range without having already broken out (55-97% channel position), RSI(14) 42-66 (healthy, not overbought or dying), 24h move ≤8% (hasn't already popped), trend not down, no TF Agree conflict, FDV/MCap ≤1.6x (limited dilution risk), and not flagged illiquid.</li>
+        <li>The <strong>"Early Entry only (strict)"</strong> checkbox (relabels itself <strong>"Valid Base only (strict)"</strong> on the Accumulation tab) hides everything that doesn't pass the checklist for whichever tab you're on — Breakout's pre-breakout coil checklist above, or Accumulation's own: ATH drawdown ≤-60% (a real discount, not a dip), within 20% of its own recent low, contracting range (volatility ratio ≤1.0x), quiet volume (Vol/MCap ≤5%), neutral RSI 35-60, limited dilution risk, liquid, and not still making fresh lows. These are deliberately different checklists for different jobs — a small, high-confidence shortlist rather than a soft ranking, because the point of either screen is precision over coverage. A coin still loading its candles is kept visible rather than hidden, the same way the Trend filter works, so the page has something to resolve.</li>
+        <li><strong>Opportunity</strong> (Simple view) is a single 0-100 score that folds the checklist above into one number instead of a dozen columns, so you don't need the full expert table to get a read. It's <strong>mode-aware</strong> — Breakout and Accumulation compute genuinely different numbers from different inputs (coiled-near-highs vs. deep-and-quiet-base), so switching tabs changes the ranking, not just the label — and both are discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE). Status bands, Breakout tab: <span class="num">🟢 Strong Setup</span> 75+, <span class="num">🟡 Building</span> 50-74, <span class="num">⚪ Not Yet</span> 25-49, <span class="num">🔴 Avoid</span> below (or illiquid/downtrend, floored low regardless of the rest). Accumulation tab: the same four score bands, labeled <span class="num">🟢 Strong Base</span> / <span class="num">🟡 Basing</span> / <span class="num">⚪ Not Yet</span> / <span class="num">🔴 Avoid</span> instead. Hover the pill for exactly which inputs feed it on the current tab. It's a ranking aid, not a signal — a high score still needs the Setup/Valid Base checklist (or your own chart read) to confirm before acting.</li>
+        <li><strong>Market Cap</strong> and every new field are sourced from CoinGecko's public <span class="num">/coins/markets</span> endpoint (top 1000 coins by cap, refreshed every 5 minutes) with the <span class="num">price_change_percentage</span> extension for 1h/7d/14d/30d/200d/1y momentum. Matched to each row by ticker symbol — a handful of very obscure or newly-listed tickers may show <span class="num">—</span> if CoinGecko doesn't rank them top-1000, or if a symbol collides with an unrelated larger coin sharing the same ticker (rare, resolved in favor of the larger-cap coin).</li>
+        <li><strong>Dist. ATH</strong> is the real, exact distance from the coin's true all-time high (not a 50/300-bar proxy) — hover it for the ATH date. In Breakout mode, closer to 0% (near or at ATH) scores higher under the default weights: it confirms strength, though it also means less room before you're in genuinely new territory with no overhead resistance to reference. In Accumulation mode it's inverted — a deep, old drawdown (e.g. -70%+) is the "classic base" signal the <strong>Deep drawdown from ATH</strong> slider rewards.</li>
+        <li><strong>24h Range Pos.</strong> (Breakout tab) is where the current price sits between today's <span class="num">low_24h</span> and <span class="num">high_24h</span> — 100% means it's printing today's high right now (an active push), 0% means it's sitting at today's low despite a positive score elsewhere (worth checking why). This is intraday entry timing that a single 24h % change can't tell you.</li>
+        <li><strong>FDV/MCap</strong> is fully-diluted valuation divided by current market cap — 1.00x means essentially all supply is already circulating (no dilution overhang); 3.00x means the market cap could effectively triple against you from unlocks alone even if the price never "goes up" in USD terms. This is a risk check, not a timing signal — a tight base with a high FDV/MCap can still be a trap. <strong>Low dilution risk</strong> (Accumulation) rewards ratios near 1.0x.</li>
+        <li><strong>Vol/MCap</strong> replaces raw 24h $ volume everywhere — it normalizes conviction across market-cap sizes (a $50M coin doing $5M volume is louder, relatively, than BTC doing $300M) and is used as the "quiet volume" (Accumulation) / breakout volume signal (Breakout) instead of the old vs-14-day-average surge calculation.</li>
+        <li><strong>7d momentum</strong> sits alongside 24h everywhere in Breakout mode so you can read acceleration: 24h hot but 7d flat reads as a <em>fresh move</em>; 24h cooling while 7d is still way up reads as <em>cooling off</em> — both called out directly in the Read column.</li>
+        <li><strong>Up to 300 bars of history</strong> for the technicals that still need real candles (RSI, Donchian channel width/position, Range Contraction, TF Agree, the 20-period and 200-period Trend filters) — Crypto.com's raw REST candlestick endpoint returns up to 300 bars per request. At <strong>4H</strong> that's ~50 days; at <strong>Daily</strong> that's ~300 days. Whichever one you pick, TF Agree always fetches the other for the cross-check.</li>
+        <li><strong>Trend(200)</strong> (Breakout tab) is a genuine 200-period EMA trend filter — price above a rising 200 EMA is Up, below a falling one is Down. The simpler 20-period <span class="num">Trend</span> column (used everywhere, and as this signal's fallback when a coin has under ~210 bars of history) is unchanged.</li>
+        <li><strong>Universe is spot USD/USDT pairs only</strong>, classified directly from Crypto.com's instrument list (<span class="num">inst_type: CCY_PAIR</span>), filtered to exclude tokenized-stock, ETF, commodity and stablecoin listings using a manual blocklist. Click the <span class="num">×</span> next to any row that doesn't belong to hide it permanently on this device.</li>
+        <li><strong>Bybit perp availability</strong> is checked live against Bybit's instrument list on load (not a stale snapshot), so every clickable chart link should resolve.</li>
+        <li><strong>Composite score</strong> ranks each coin 0–100 on each metric relative to the current filtered set, then blends those ranks using the sliders above — it updates instantly as you drag, no refetch needed. Market Cap and Market Cap Rank are shown for reference only and never enter a composite score.</li>
+        <li><strong>Your weights, page size and sort are saved automatically</strong> to this browser (localStorage — private to this device) and reload next time you open this file. Hidden rows persist the same way. Use <span class="num">Reset weights</span> to go back to the defaults.</li>
+        <li><strong>Preset</strong> dropdown gives one-click weight combinations per mode — e.g. Breakout's <span class="num">New ATH Momentum</span> leans hard on ATH proximity plus 7d confirmation, while <span class="num">Fresh Move (early)</span> leans on 24h momentum and Vol/MCap conviction to catch a move before 7d catches up. Dragging any slider by hand switches it to <span class="num">Custom</span> automatically.</li>
+        <li><strong>Read</strong> is a plain-language, one-line summary generated entirely from the numbers already in that row — deterministic, no AI call. Hover it for the fuller version, which now includes the 7d %, ATH distance/date, range position, Vol/MCap and FDV/MCap where relevant. <strong>Search also matches Read</strong> — try a phrase like <span class="num">fresh move</span>, <span class="num">near ATH</span>, or <span class="num">deep discount</span>.</li>
+        <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
+        <li><strong>"Hide illiquid"</strong> drops any coin where 3+ of its last 10 candles had zero trades — thin, barely-traded coins produce stale closes that distort every technical column, Trend especially.</li>
+        <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
+        <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all public, unauthenticated, read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
+      </ul>
+    </div>
+  </details>
+
+</div>
+
+<script>
+(function(){
+
+  // ---------- non-crypto denylist (Crypto.com lists tokenized stocks/ETFs/commodities/stablecoins as USD pairs too) ----------
+  var NON_CRYPTO_BASE = new Set([
+    'TEVA','VNO','ES','SPX','MTD','USAT','HPP',
+    'XAUT','PAXG','XAU','XAG','XPT','XPD','GWEI','NATGAS',
+    'USDT','TUSD','GUSD','HUSD','USD1','USDS','USDU','PYUSD','EURC','FRAX','SUSD','STABLE',
+    'ANTHROPICIPO','OPENAIIPO','SPCX',
+    'SPY','QQQ','IWM','SMH','XLE','XBI','EWJ','EWT','EWZ','EWY','UVXY','SOXL','SOXS','TQQQ','SQQQ','TZA'
+  ]);
+
+  function classifyInstrument(inst){
+    if (inst.inst_type !== 'CCY_PAIR') return null;
+    var base = inst.base_ccy, quote = inst.quote_ccy;
+    if (quote !== 'USD' && quote !== 'USDT') return null;
+    if (!base || base.length < 2) return null;
+    if (/\d{4,}/.test(base)) return null;
+    if (NON_CRYPTO_BASE.has(base)) return null;
+    return { symbol: inst.symbol, base: base, quote: quote };
+  }
+
+  // ---------- state ----------
+  var MODES = {
+    breakout: {
+      metrics: [
+        {key:'mom',         label:'Momentum (24h)',            default:15},
+        {key:'mom7d',       label:'Momentum (7d)',              default:10},
+        {key:'rs',          label:'Rel. strength vs BTC',        default:10},
+        {key:'volMcap',     label:'Vol/MCap conviction',        default:15},
+        {key:'athProx',     label:'Proximity to ATH',            default:10},
+        {key:'rangePos',    label:'24h range position',          default:10},
+        {key:'trendAlign',  label:'Trend alignment (200 EMA)',   default:15},
+        {key:'donchProx',   label:'Donchian breakout proximity', default:15}
+      ],
+      columns: [
+        {key:'rank', label:'#', sortable:false},
+        {key:'symbol', label:'Coin', sortable:true},
+        {key:'price', label:'Price', sortable:true, num:true},
+        {key:'trend', label:'Trend', sortable:true},
+        {key:'trendAgree', label:'TF Agree', sortable:false},
+        {key:'trend200', label:'Trend(200)', sortable:true},
+        {key:'mom', label:'24h %', sortable:true, num:true},
+        {key:'mom7d', label:'7d %', sortable:true, num:true},
+        {key:'rs', label:'RS vs BTC', sortable:true, num:true},
+        {key:'marketCap', label:'Market Cap', sortable:true, num:true},
+        {key:'volMcap', label:'Vol/MCap', sortable:true, num:true},
+        {key:'athPct', label:'Dist. ATH', sortable:true, num:true},
+        {key:'rangePos', label:'24h Range Pos.', sortable:true, num:true},
+        {key:'donch', label:'Donch(20) Dist.', sortable:true, num:true},
+        {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
+        {key:'setup', label:'Setup', sortable:false},
+        {key:'breakoutStatus', label:'Breakout', sortable:false},
+        {key:'read', label:'Read', sortable:false},
+        {key:'score', label:'Score', sortable:true, num:true},
+        {key:'hide', label:'', sortable:false}
+      ]
+    },
+    accumulation: {
+      metrics: [
+        {key:'distLow',    label:'Proximity to low',        default:20},
+        {key:'volatility', label:'Range contraction',       default:20},
+        {key:'quiet',      label:'Quiet volume (Vol/MCap)', default:15},
+        {key:'rsiNeutral', label:'RSI neutrality',          default:10},
+        {key:'flatMom',    label:'Flat 24h momentum',       default:5},
+        {key:'donchTight', label:'Donchian tightness',      default:10},
+        {key:'edgeProx',   label:'Channel edge proximity',  default:10},
+        {key:'athDrawdown',label:'Deep drawdown from ATH',  default:5},
+        {key:'lowDilution',label:'Low dilution risk',       default:5}
+      ],
+      columns: [
+        {key:'rank', label:'#', sortable:false},
+        {key:'symbol', label:'Coin', sortable:true},
+        {key:'price', label:'Price', sortable:true, num:true},
+        {key:'trend', label:'Trend', sortable:true},
+        {key:'trendAgree', label:'TF Agree', sortable:false},
+        {key:'mom', label:'24h %', sortable:true, num:true},
+        {key:'marketCap', label:'Market Cap', sortable:true, num:true},
+        {key:'athPct', label:'Dist. ATH', sortable:true, num:true},
+        {key:'fdvRatio', label:'FDV/MCap', sortable:true, num:true},
+        {key:'distLow', label:'Dist. Low', sortable:true, num:true},
+        {key:'volatility', label:'Range Contr.', sortable:true, num:true},
+        {key:'volMcap', label:'Vol/MCap', sortable:true, num:true},
+        {key:'rsi14', label:'RSI(14)', sortable:true, num:true},
+        {key:'donchWidth', label:'Donch(20) Width', sortable:true, num:true},
+        {key:'channelPos', label:'Channel Pos.', sortable:true, num:true},
+        {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
+        {key:'read', label:'Read', sortable:false},
+        {key:'score', label:'Score', sortable:true, num:true},
+        {key:'hide', label:'', sortable:false}
+      ]
+    }
+  };
+
+  function defaultWeightsFor(mode){
+    var w = {};
+    MODES[mode].metrics.forEach(function(m){ w[m.key] = m.default; });
+    return w;
+  }
+  var DEFAULT_WEIGHTS_BY_MODE = {};
+  Object.keys(MODES).forEach(function(mode){ DEFAULT_WEIGHTS_BY_MODE[mode] = defaultWeightsFor(mode); });
+  function freshWeightsByMode(){
+    var out = {};
+    Object.keys(MODES).forEach(function(mode){ out[mode] = Object.assign({}, DEFAULT_WEIGHTS_BY_MODE[mode]); });
+    return out;
+  }
+
+  var PRESETS = {
+    breakout: [
+      {name:'Balanced', weights: Object.assign({}, DEFAULT_WEIGHTS_BY_MODE.breakout)},
+      {name:'Confirmed Breakout', weights: {mom:20, mom7d:20, rs:10, volMcap:10, athProx:10, rangePos:5, trendAlign:15, donchProx:10}},
+      {name:'Fresh Move (early)', weights: {mom:25, mom7d:5, rs:5, volMcap:20, athProx:5, rangePos:15, trendAlign:10, donchProx:15}},
+      {name:'New ATH Momentum', weights: {mom:10, mom7d:15, rs:5, volMcap:10, athProx:30, rangePos:5, trendAlign:15, donchProx:10}},
+      {name:'Strict Trend-Only', weights: {mom:5, mom7d:5, rs:5, volMcap:10, athProx:5, rangePos:5, trendAlign:40, donchProx:25}},
+      {name:'Coiled / Early Entry', weights: {mom:5, mom7d:5, rs:10, volMcap:10, athProx:5, rangePos:5, trendAlign:25, donchProx:35}}
+    ],
+    accumulation: [
+      {name:'Balanced', weights: Object.assign({}, DEFAULT_WEIGHTS_BY_MODE.accumulation)},
+      {name:'Strict Base', weights: {distLow:24, volatility:22, quiet:12, rsiNeutral:6, flatMom:4, donchTight:12, edgeProx:8, athDrawdown:8, lowDilution:4}},
+      {name:'Donchian-Aligned Base', weights: {distLow:18, volatility:18, donchTight:18, edgeProx:12, quiet:11, rsiNeutral:5, flatMom:2, athDrawdown:10, lowDilution:6}},
+      {name:'Almost Breakout', weights: {donchTight:25, edgeProx:30, distLow:12, volatility:8, quiet:6, rsiNeutral:2, flatMom:1, athDrawdown:11, lowDilution:5}},
+      {name:'Deep Value Base', weights: {athDrawdown:30, lowDilution:20, distLow:15, volatility:15, quiet:10, rsiNeutral:5, flatMom:3, donchTight:1, edgeProx:1}}
+    ]
+  };
+  function matchingPresetIndex(mode){
+    var w = state.weightsByMode[mode];
+    var list = PRESETS[mode];
+    for (var i=0; i<list.length; i++){
+      var p = list[i].weights;
+      var same = Object.keys(p).every(function(k){ return w[k] === p[k]; })
+        && Object.keys(w).every(function(k){ return p[k] === w[k]; });
+      if (same) return i;
+    }
+    return -1;
+  }
+  var DEFAULT_CONFIG = {
+    mode: 'breakout',
+    weightsByMode: freshWeightsByMode(),
+    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '4h', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, simpleView: true
+  };
+  var savedConfig = loadConfig();
+  var state = {
+    universe: [],
+    byBase: {},             // base -> {symbol, base, quote}
+    tickers: {},            // base -> {price, mom, vol}
+    candles: {},            // symbol -> computed technicals, primary (selected) timeframe
+    candlesAlt: {},         // symbol -> computed technicals, complementary timeframe (for TF-agreement check)
+    marketCaps: {},         // base -> {marketCap, totalVolume, ...}
+    mode: savedConfig.mode,
+    weightsByMode: savedConfig.weightsByMode,
+    search: '',
+    pageSize: savedConfig.pageSize,
+    sortKey: savedConfig.sortKey,
+    sortDir: savedConfig.sortDir,
+    bybitOnly: savedConfig.bybitOnly,
+    candleTimeframe: savedConfig.candleTimeframe,
+    hideIlliquid: savedConfig.hideIlliquid,
+    trendFilter: savedConfig.trendFilter,
+    earlyEntryOnly: savedConfig.earlyEntryOnly,
+    simpleView: savedConfig.simpleView,
+    hidden: loadHidden(),
+    bybitBases: new Set(),
+    lastUpdated: null,
+    regime: { btcTrend: null, btcDDirection: null, verdict: null, reason: 'Reading regime…' },
+    btcSeries: null // {timestamp: close} for the current candleTimeframe, used for BTC-correlation
+  };
+
+  function currentWeights(){ return state.weightsByMode[state.mode]; }
+  var SIMPLE_COLUMNS = [
+    {key:'rank', label:'#', sortable:false},
+    {key:'symbol', label:'Coin', sortable:true},
+    {key:'price', label:'Price', sortable:true, num:true},
+    {key:'mom', label:'24h %', sortable:true, num:true},
+    {key:'opportunity', label:'Opportunity', sortable:true, num:true},
+    {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
+    {key:'read', label:'Why', sortable:false},
+    {key:'hide', label:'', sortable:false}
+  ];
+  function currentColumns(){ return state.simpleView ? SIMPLE_COLUMNS : MODES[state.mode].columns; }
+
+  function loadHidden(){
+    try { return new Set(JSON.parse(localStorage.getItem('screener_hidden_sa')||'[]')); }
+    catch(e){ return new Set(); }
+  }
+  function saveHidden(){
+    try { localStorage.setItem('screener_hidden_sa', JSON.stringify(Array.from(state.hidden))); }
+    catch(e){}
+  }
+
+  function loadConfig(){
+    var fallback = {
+      mode: DEFAULT_CONFIG.mode,
+      weightsByMode: freshWeightsByMode(),
+      pageSize: DEFAULT_CONFIG.pageSize, sortKey: DEFAULT_CONFIG.sortKey,
+      sortDir: DEFAULT_CONFIG.sortDir, bybitOnly: DEFAULT_CONFIG.bybitOnly,
+      candleTimeframe: DEFAULT_CONFIG.candleTimeframe, hideIlliquid: DEFAULT_CONFIG.hideIlliquid,
+      trendFilter: DEFAULT_CONFIG.trendFilter, earlyEntryOnly: DEFAULT_CONFIG.earlyEntryOnly,
+      simpleView: DEFAULT_CONFIG.simpleView
+    };
+    try {
+      var raw = localStorage.getItem('screener_config_sa');
+      if (!raw) return fallback;
+      var saved = JSON.parse(raw);
+      if (!saved) return fallback;
+      var savedWbm = saved.weightsByMode || {};
+      var mergedWbm = freshWeightsByMode();
+      Object.keys(MODES).forEach(function(mode){
+        Object.assign(mergedWbm[mode], savedWbm[mode] || {});
+      });
+      return {
+        mode: MODES.hasOwnProperty(saved.mode) ? saved.mode : DEFAULT_CONFIG.mode,
+        weightsByMode: mergedWbm,
+        pageSize: saved.pageSize || DEFAULT_CONFIG.pageSize,
+        sortKey: saved.sortKey || DEFAULT_CONFIG.sortKey,
+        sortDir: saved.sortDir || DEFAULT_CONFIG.sortDir,
+        bybitOnly: (typeof saved.bybitOnly === 'boolean') ? saved.bybitOnly : DEFAULT_CONFIG.bybitOnly,
+        candleTimeframe: (saved.candleTimeframe === '4h' || saved.candleTimeframe === '1D') ? saved.candleTimeframe : DEFAULT_CONFIG.candleTimeframe,
+        hideIlliquid: (typeof saved.hideIlliquid === 'boolean') ? saved.hideIlliquid : DEFAULT_CONFIG.hideIlliquid,
+        trendFilter: ['all','up','down','updown'].indexOf(saved.trendFilter) !== -1 ? saved.trendFilter : DEFAULT_CONFIG.trendFilter,
+        earlyEntryOnly: (typeof saved.earlyEntryOnly === 'boolean') ? saved.earlyEntryOnly : DEFAULT_CONFIG.earlyEntryOnly,
+        simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView
+      };
+    } catch(e){ return fallback; }
+  }
+  function saveConfig(){
+    try {
+      localStorage.setItem('screener_config_sa', JSON.stringify({
+        mode: state.mode, weightsByMode: state.weightsByMode, pageSize: state.pageSize,
+        sortKey: state.sortKey, sortDir: state.sortDir,
+        bybitOnly: state.bybitOnly, candleTimeframe: state.candleTimeframe, hideIlliquid: state.hideIlliquid,
+        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, simpleView: state.simpleView
+      }));
+      flashSaved();
+    } catch(e){}
+  }
+  var saveFlashTimer = null;
+  function flashSaved(){
+    var el = document.getElementById('savedFlag');
+    if (!el) return;
+    el.classList.add('show');
+    clearTimeout(saveFlashTimer);
+    saveFlashTimer = setTimeout(function(){ el.classList.remove('show'); }, 1400);
+  }
+
+  function fmtUsd(v, opts){
+    opts = opts || {};
+    if (v == null || isNaN(v)) return '—';
+    var abs = Math.abs(v);
+    if (opts.compact && abs >= 1000){
+      var units = [[1e12,'T'],[1e9,'B'],[1e6,'M'],[1e3,'K']];
+      for (var i=0;i<units.length;i++){
+        if (abs >= units[i][0]) return '$' + (v/units[i][0]).toFixed(2) + units[i][1];
+      }
+    }
+    var decimals = abs >= 100 ? 2 : (abs >= 1 ? 4 : 6);
+    return '$' + v.toLocaleString(undefined, {minimumFractionDigits:decimals, maximumFractionDigits:decimals});
+  }
+  function fmtPct(v){
+    if (v == null || isNaN(v)) return '—';
+    return (v>0?'+':'') + v.toFixed(2) + '%';
+  }
+  function pctClass(v){
+    if (v == null || isNaN(v)) return 'flat';
+    return v > 0.02 ? 'pos' : (v < -0.02 ? 'neg' : 'flat');
+  }
+  function btcCorrCellHtml(r){
+    if (r.btcCorr == null){
+      return r.distStatus === 'ok' ? '<span class="muted">—</span>' : '<span class="spin" title="Computing BTC correlation…"></span>';
+    }
+    var c = r.btcCorr;
+    var mag = Math.abs(c);
+    var band = mag >= 0.7 ? 'HIGH' : (mag >= 0.3 ? 'MED' : 'LOW');
+    var cls = r.divergingFromBtc ? 'watch' : 'flat';
+    var label = (c>=0?'+':'') + c.toFixed(2) + ' ' + band;
+    var title = 'Rolling correlation of this coin\'s bar-over-bar returns vs BTC\'s, over the last ~30 bars at the current Candles timeframe.'
+      + (r.divergingFromBtc ? ' Low correlation AND moving opposite to BTC right now — genuine idiosyncratic strength/weakness, not just beta.' : '');
+    var badge = r.divergingFromBtc ? ' 🔀' : '';
+    return '<span class="pill ' + cls + '" title="' + title + '">' + label + badge + '</span>';
+  }
+  function timeAgo(ts){
+    if (!ts) return '–';
+    var s = Math.max(0, Math.round((Date.now()-ts)/1000));
+    if (s < 5) return 'just now';
+    if (s < 60) return s + 's ago';
+    return Math.round(s/60) + 'm ago';
+  }
+
+  // ---------- ranking / composite ----------
+  function percentileRanks(rows, accessor){
+    var vals = rows.map(accessor).filter(function(v){ return v!=null && !isNaN(v); });
+    vals.sort(function(a,b){ return a-b; });
+    var n = vals.length;
+    var ranks = {};
+    rows.forEach(function(r){
+      var v = accessor(r);
+      if (v==null || isNaN(v) || n<2){ ranks[r.base] = 50; return; }
+      var lo = lowerBound(vals, v);
+      ranks[r.base] = Math.round((lo/(n-1))*100);
+    });
+    return ranks;
+  }
+  function lowerBound(sorted, v){
+    var lo=0, hi=sorted.length;
+    while(lo<hi){ var mid=(lo+hi)>>1; if (sorted[mid] < v) lo=mid+1; else hi=mid; }
+    return lo;
+  }
+
+  // ---------- opportunity score: one number instead of a dozen columns ----------
+  // Folds the same "is this a valid early entry" checklist used by the strict filter into a
+  // continuous 0-100 score (rather than pass/fail), PLUS the macro Regime verdict -- so a
+  // perfectly coiled coin during a BTC downtrend still shows as a middling number, not a 90.
+  // This is deliberately absolute-feeling (not percentile-ranked against whatever's currently
+  // on screen) so the same coin reads the same score whether 20 or 200 coins are visible.
+  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+  function regimeMultiplier(){
+    if (state.regime.verdict === 'STAND DOWN') return 0.5;
+    if (state.regime.verdict === 'CAUTION') return 0.8;
+    if (state.regime.verdict === 'TRADE') return 1.0;
+    return 0.85; // regime not yet resolved -- mild, non-committal discount
+  }
+  function computeOpportunity(r, effTrend){
+    if (r.distStatus !== 'ok') return {score:null, label:null};
+    if (r.isIlliquid) return {score:2, label:'🔴 Avoid (illiquid)'};
+    if (effTrend === 'down') return {score:Math.round(8*regimeMultiplier()), label:'🔴 Avoid (downtrend)'};
+
+    var tightness = r.donchWidthPct==null ? 0.4 : clamp01(1 - r.donchWidthPct/15);
+    var cp = r.channelPosPct;
+    var position = cp==null ? 0.3
+      : (cp < 40 ? 0.3 + 0.4*(cp/40)
+        : (cp <= 75 ? 0.7 + 0.3*((cp-40)/35)
+          : (cp <= 97 ? 1.0 - 0.5*((cp-75)/22)
+            : 0.1)));
+    var rsi = r.rsi14;
+    var rsiScore = rsi==null ? 0.5 : (rsi>=42 && rsi<=66 ? (0.6 + 0.4*(1-Math.abs(rsi-54)/12)) : clamp01(1 - Math.abs(rsi-54)/40));
+    var notPopped = r.mom==null ? 0.6 : (r.mom<=2 ? 1.0 : (r.mom<=8 ? 1 - (r.mom-2)/6*0.6 : Math.max(0, 0.25 - (r.mom-8)/40)));
+    var trendScore = effTrend === 'up' ? 1.0 : (effTrend === 'mixed' ? 0.4 : 0.5);
+    var agreeScore = r.trendAgree === 'agree' ? 1.0 : (r.trendAgree === 'conflict' ? 0.1 : 0.6);
+    var dilutionScore = r.fdvRatio == null ? 0.7 : clamp01(1 - (r.fdvRatio-1)/1.5);
+
+    var base = tightness*20 + position*20 + rsiScore*12 + notPopped*15 + trendScore*15 + agreeScore*8 + dilutionScore*10;
+    var score = Math.round(base * regimeMultiplier());
+    var label = score>=75 ? '🟢 Strong Setup' : (score>=50 ? '🟡 Building' : (score>=25 ? '⚪ Not Yet' : '🔴 Avoid'));
+    return {score:score, label:label};
+  }
+  // Accumulation's own opportunity score: a completely different shape than Breakout's --
+  // rewards being deep below ATH, quiet, contracting range, and near its own low, instead of
+  // coiled-near-highs. Deliberately produces a DIFFERENT ranking from Breakout's score so the
+  // two tabs actually diverge in Simple View, not just in the full expert table.
+  function computeAccOpportunity(r){
+    if (r.distStatus !== 'ok') return {score:null, label:null};
+    if (r.isIlliquid) return {score:2, label:'🔴 Avoid (illiquid)'};
+
+    var deepAth = r.athPct==null ? 0.4 : clamp01(-r.athPct/85); // -85% or deeper -> 1.0
+    var nearLow = r.distFromLowPct==null ? 0.4 : clamp01(1 - r.distFromLowPct/25); // within 25% of its own low -> high score
+    var contraction = r.volatilityRatio==null ? 0.5 : clamp01(1 - (r.volatilityRatio-0.5)/1.0); // <=0.5 -> 1.0, >=1.5 -> 0
+    var quiet = r.volMcapPct==null ? 0.5 : clamp01(1 - r.volMcapPct/8); // low relative volume -> high score (nobody's noticed yet)
+    var rsi = r.rsi14;
+    var rsiScore = rsi==null ? 0.5 : clamp01(1 - Math.max(0, rsi-60)/25) * clamp01(1 - Math.max(0, 30-rsi)/25); // penalize >60 (already running) and <30 (still falling knife)
+    var dilutionScore = r.fdvRatio == null ? 0.7 : clamp01(1 - (r.fdvRatio-1)/1.5);
+    var notFalling = r.trend === 'down' ? 0.35 : (r.trend === 'mixed' ? 0.7 : 1.0); // a real base shouldn't still be making fresh lows
+
+    var base = deepAth*22 + nearLow*20 + contraction*18 + quiet*15 + rsiScore*12 + dilutionScore*8 + notFalling*5;
+    var score = Math.round(base * regimeMultiplier());
+    var label = score>=75 ? '🟢 Strong Base' : (score>=50 ? '🟡 Basing' : (score>=25 ? '⚪ Not Yet' : '🔴 Avoid'));
+    return {score:score, label:label};
+  }
+
+  function computeRows(){
+    var btc = state.tickers['BTC'];
+    var btcMom = btc ? btc.mom : 0;
+    var rows = [];
+    Object.keys(state.byBase).forEach(function(base){
+      if (state.hidden.has(base)) return;
+      var t = state.tickers[base];
+      if (!t) return;
+      var candle = state.candles[state.byBase[base].symbol];
+      var ok = candle && candle.status==='ok';
+      var altCandle = state.candlesAlt[state.byBase[base].symbol];
+      var altOk = altCandle && altCandle.status==='ok';
+      var mc = state.marketCaps[base];
+      var marketCap = mc ? mc.marketCap : null;
+      // Uses CoinGecko's aggregated global 24h volume (all exchanges), not just Crypto.com's
+      // own slice, so this reads as true market-wide conviction rather than one venue's activity.
+      var volMcapPct = (marketCap && marketCap>0 && mc && mc.totalVolume!=null) ? (mc.totalVolume/marketCap*100) : null;
+      var fdvRatio = (mc && mc.fdv && marketCap && marketCap>0) ? (mc.fdv/marketCap) : null;
+      var rangePos24h = (mc && mc.high24h!=null && mc.low24h!=null && mc.high24h>mc.low24h && t.price!=null)
+        ? ((t.price - mc.low24h) / (mc.high24h - mc.low24h)) * 100 : null;
+      rows.push({
+        base: base,
+        instrument: state.byBase[base].symbol,
+        quote: state.byBase[base].quote,
+        price: t.price,
+        mom: t.mom,
+        mom7d: mc ? mc.mom7d : null,
+        mom14d: mc ? mc.mom14d : null,
+        mom30d: mc ? mc.mom30d : null,
+        mom200d: mc ? mc.mom200d : null,
+        mom1y: mc ? mc.mom1y : null,
+        vol: t.vol,
+        rs: (t.mom!=null && btcMom!=null) ? (t.mom - btcMom) : null,
+        marketCap: marketCap,
+        marketCapRank: mc ? mc.rank : null,
+        fdvRatio: fdvRatio,
+        athPct: mc ? mc.athPct : null,
+        athDate: mc ? mc.athDate : null,
+        atlPct: mc ? mc.atlPct : null,
+        mcapChangePct: mc ? mc.mcapChangePct : null,
+        rangePos24h: rangePos24h,
+        volMcapPct: volMcapPct,
+        distPct: ok ? candle.distPct : null,
+        volSurge: ok ? candle.volSurge : null,
+        distFromLowPct: ok ? candle.distFromLowPct : null,
+        volatilityRatio: ok ? candle.volatilityRatio : null,
+        rsi14: ok ? candle.rsi14 : null,
+        trend: ok ? candle.trend : null,
+        trend200: ok ? candle.trend200 : null,
+        donchDistPct: ok ? candle.donchDistPct : null,
+        donchDistLowPct: ok ? candle.donchDistLowPct : null,
+        donchWidthPct: ok ? candle.donchWidthPct : null,
+        channelPosPct: ok ? candle.channelPosPct : null,
+        breakoutStatus: ok ? candle.breakoutStatus : null,
+        isIlliquid: ok ? candle.isIlliquid : false,
+        zeroVolBars: ok ? candle.zeroVolBars : null,
+        distStatus: candle ? candle.status : 'idle',
+        trendAlt: altOk ? (altCandle.trend200 || altCandle.trend) : null,
+        altStatus: altCandle ? altCandle.status : 'idle',
+        btcCorr: (ok && base !== 'BTC') ? candle.btcCorr : null
+      });
+      var lastRow = rows[rows.length-1];
+      // "Diverging from BTC" -- the exact case of BTC flat/down while this coin pushes up (or
+      // vice versa): low/negative rolling correlation AND opposite-signed 24h moves. This is
+      // relative strength that isn't just beta to BTC -- worth surfacing on its own.
+      if (lastRow.btcCorr != null && btcMom != null && lastRow.mom != null){
+        var oppositeSign = (btcMom <= 0 && lastRow.mom > 0) || (btcMom >= 0 && lastRow.mom < 0);
+        lastRow.divergingFromBtc = (lastRow.btcCorr <= 0.2 && oppositeSign);
+      } else {
+        lastRow.divergingFromBtc = false;
+      }
+      var effTrend = lastRow.trend200 || lastRow.trend;
+      lastRow.donchSide = effTrend === 'up' ? 'long' : (effTrend === 'down' ? 'short' : null);
+      lastRow.donchDisplayPct = lastRow.donchSide === 'long' ? lastRow.donchDistPct : (lastRow.donchSide === 'short' ? lastRow.donchDistLowPct : null);
+      // Cross-timeframe agreement: does the complementary timeframe (Daily when primary is 4H,
+      // or vice versa) confirm the same direction? Catches a 4H wiggle that the daily trend disagrees with.
+      if (effTrend && lastRow.trendAlt){
+        lastRow.trendAgree = (effTrend === lastRow.trendAlt) ? 'agree' : ((effTrend==='up'&&lastRow.trendAlt==='down')||(effTrend==='down'&&lastRow.trendAlt==='up') ? 'conflict' : 'partial');
+      } else {
+        lastRow.trendAgree = null;
+      }
+      // "Very valid early entry" gate: a strict, all-must-pass checklist for a pre-breakout
+      // coil -- tight Donchian range, price pinned in the upper half of that range (but not
+      // already broken out), healthy (not overbought) RSI, hasn't already popped today, trend
+      // not down, no cross-timeframe conflict, no heavy dilution overhang, and liquid. This is
+      // deliberately strict (few passes) rather than a soft-ranked score -- the point is
+      // confidence, not coverage.
+      if (ok){
+        var c = lastRow;
+        var passes = c.donchWidthPct!=null && c.donchWidthPct<=10
+          && c.channelPosPct!=null && c.channelPosPct>=55 && c.channelPosPct<=97
+          && c.rsi14!=null && c.rsi14>=42 && c.rsi14<=66
+          && c.mom!=null && c.mom<=8
+          && effTrend !== 'down'
+          && c.trendAgree !== 'conflict'
+          && (c.fdvRatio==null || c.fdvRatio<=1.6)
+          && !c.isIlliquid
+          && (c.rs==null || c.rs>=-3);
+        lastRow.validEarlyEntry = passes;
+
+        // Accumulation's own strict gate: deep discount, quiet, contracting, near its own low,
+        // not still making fresh lows, no heavy dilution overhang. A different checklist from
+        // Breakout's on purpose -- this is "valid base to accumulate," not "about to break out."
+        var accPasses = c.athPct!=null && c.athPct<=-60
+          && c.distFromLowPct!=null && c.distFromLowPct<=20
+          && c.volatilityRatio!=null && c.volatilityRatio<=1.0
+          && c.rsi14!=null && c.rsi14>=35 && c.rsi14<=60
+          && (c.volMcapPct==null || c.volMcapPct<=5)
+          && (c.fdvRatio==null || c.fdvRatio<=1.6)
+          && !c.isIlliquid
+          && effTrend !== 'down';
+        lastRow.validAccEntry = accPasses;
+      } else {
+        lastRow.validEarlyEntry = null; // still loading -- not yet decided, not a fail
+        lastRow.validAccEntry = null;
+      }
+      var opp = computeOpportunity(lastRow, effTrend);
+      lastRow.opportunityScore = opp.score;
+      lastRow.opportunityLabel = opp.label;
+      var accOpp = computeAccOpportunity(lastRow);
+      lastRow.accOpportunityScore = accOpp.score;
+      lastRow.accOpportunityLabel = accOpp.label;
+      // What Simple View actually shows/sorts by -- whichever score matches the active tab.
+      lastRow.simpleOpportunityScore = state.mode === 'accumulation' ? lastRow.accOpportunityScore : lastRow.opportunityScore;
+      lastRow.simpleOpportunityLabel = state.mode === 'accumulation' ? lastRow.accOpportunityLabel : lastRow.opportunityLabel;
+      lastRow.simpleValidEntry = state.mode === 'accumulation' ? lastRow.validAccEntry : lastRow.validEarlyEntry;
+    });
+    if (state.bybitOnly){
+      rows = rows.filter(function(r){ return state.bybitBases.has(r.base); });
+    }
+    if (state.hideIlliquid){
+      rows = rows.filter(function(r){ return !r.isIlliquid; });
+    }
+    if (state.trendFilter !== 'all'){
+      rows = rows.filter(function(r){
+        if (r.trend == null) return true;
+        if (state.trendFilter === 'up') return r.trend === 'up';
+        if (state.trendFilter === 'down') return r.trend === 'down';
+        if (state.trendFilter === 'updown') return r.trend === 'up' || r.trend === 'down';
+        return true;
+      });
+    }
+    if (state.earlyEntryOnly){
+      // Keep unresolved (null) rows visible too, same reasoning as the Trend filter above --
+      // otherwise a fully-filtered page never fetches the candles it needs to resolve.
+      // Uses whichever gate matches the active tab -- the pre-breakout coil checklist on
+      // Breakout, the deep-discount-base checklist on Accumulation.
+      rows = rows.filter(function(r){ return r.simpleValidEntry !== false; });
+    }
+    if (state.search){
+      var q = state.search.toUpperCase();
+      rows = rows.filter(function(r){
+        if (r.base.indexOf(q) !== -1) return true;
+        var narr = narrateRow(r);
+        return (narr.short && narr.short.toUpperCase().indexOf(q) !== -1)
+            || (narr.full && narr.full.toUpperCase().indexOf(q) !== -1);
+      });
+    }
+
+    var w = currentWeights();
+    if (state.mode === 'accumulation'){
+      var rDistLow = percentileRanks(rows, function(r){
+        return r.distFromLowPct==null ? null : -r.distFromLowPct;
+      });
+      var rVolatility = percentileRanks(rows, function(r){
+        return r.volatilityRatio==null ? null : -r.volatilityRatio;
+      });
+      var rQuiet = percentileRanks(rows, function(r){
+        return r.volSurge==null ? null : -r.volSurge;
+      });
+      var rRsiNeutral = percentileRanks(rows, function(r){
+        return r.rsi14==null ? null : -Math.abs(r.rsi14 - 50);
+      });
+      var rFlatMom = percentileRanks(rows, function(r){
+        return r.mom==null ? null : -Math.abs(r.mom);
+      });
+      var rDonchTight = percentileRanks(rows, function(r){
+        return r.donchWidthPct==null ? null : -r.donchWidthPct;
+      });
+      var rEdgeProx = percentileRanks(rows, function(r){
+        if (r.channelPosPct==null) return null;
+        return -Math.min(r.channelPosPct, 100-r.channelPosPct);
+      });
+      // athPct is negative (e.g. -70 = 70% below ATH) -- more negative = deeper drawdown = higher rank.
+      var rAthDrawdown = percentileRanks(rows, function(r){ return r.athPct==null ? null : -r.athPct; });
+      // fdvRatio >=1 always (FDV >= market cap); closer to 1 = little future dilution overhang.
+      var rLowDilution = percentileRanks(rows, function(r){ return r.fdvRatio==null ? null : -r.fdvRatio; });
+      var wSumA = (w.distLow + w.volatility + w.quiet + w.rsiNeutral + w.flatMom + w.donchTight + w.edgeProx + w.athDrawdown + w.lowDilution) || 1;
+      rows.forEach(function(r){
+        var s = (rDistLow[r.base]*w.distLow + rVolatility[r.base]*w.volatility + rQuiet[r.base]*w.quiet + rRsiNeutral[r.base]*w.rsiNeutral + rFlatMom[r.base]*w.flatMom + rDonchTight[r.base]*w.donchTight + rEdgeProx[r.base]*w.edgeProx + rAthDrawdown[r.base]*w.athDrawdown + rLowDilution[r.base]*w.lowDilution) / wSumA;
+        r.score = Math.round(s);
+      });
+    } else {
+      var rMom = percentileRanks(rows, function(r){return r.mom;});
+      var rMom7d = percentileRanks(rows, function(r){return r.mom7d;});
+      var rRs  = percentileRanks(rows, function(r){return r.rs;});
+      var rVolMcap = percentileRanks(rows, function(r){return r.volMcapPct;});
+      // athPct is negative (0 = at ATH, -50 = 50% below); less negative = closer to ATH = higher rank.
+      var rAthProx = percentileRanks(rows, function(r){return r.athPct;});
+      var rRangePos = percentileRanks(rows, function(r){return r.rangePos24h;});
+      // Donchian breakout signal, folded in from the former standalone Donchian tab:
+      // trend alignment (does the 200 EMA -- or 20-period fallback -- support a long here at
+      // all) and proximity to that trend's fresh 20-bar breakout level.
+      var rTrendAlign = {};
+      rows.forEach(function(r){ rTrendAlign[r.base] = r.donchSide ? 100 : 0; });
+      var rDonchProx = percentileRanks(rows, function(r){
+        if (r.donchSide === 'long') return r.donchDistPct==null ? null : -r.donchDistPct;
+        if (r.donchSide === 'short') return r.donchDistLowPct==null ? null : -r.donchDistLowPct;
+        return null;
+      });
+      var wSumB = (w.mom + w.mom7d + w.rs + w.volMcap + w.athProx + w.rangePos + w.trendAlign + w.donchProx) || 1;
+      rows.forEach(function(r){
+        var s = (rMom[r.base]*w.mom + rMom7d[r.base]*w.mom7d + rRs[r.base]*w.rs + rVolMcap[r.base]*w.volMcap + rAthProx[r.base]*w.athProx + rRangePos[r.base]*w.rangePos + rTrendAlign[r.base]*w.trendAlign + rDonchProx[r.base]*w.donchProx) / wSumB;
+        r.score = Math.round(s);
+      });
+    }
+
+    var SORT_KEY_MAP = {symbol:'base', dist:'distPct', surge:'volSurge', distLow:'distFromLowPct', volatility:'volatilityRatio', quietVol:'volSurge', rsi14:'rsi14', donch:'donchDisplayPct', donchWidth:'donchWidthPct', channelPos:'channelPosPct', volMcap:'volMcapPct', rangePos:'rangePos24h', opportunity:'simpleOpportunityScore'};
+    rows.sort(function(a,b){
+      var key = SORT_KEY_MAP[state.sortKey] || state.sortKey;
+      var av = a[key];
+      var bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'string') return state.sortDir==='asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      return state.sortDir==='asc' ? av-bv : bv-av;
+    });
+
+    return rows;
+  }
+
+  // ---------- rendering ----------
+  var headRow = document.getElementById('headRow');
+  var tbody = document.getElementById('tbody');
+  var footNote = document.getElementById('footNote');
+
+  function renderHead(){
+    headRow.innerHTML = '';
+    currentColumns().forEach(function(col){
+      var th = document.createElement('th');
+      if (col.num) th.className = 'num-col';
+      if (state.sortKey === col.key) th.className += ' active';
+      if (col.sortable){
+        var btn = document.createElement('button');
+        btn.innerHTML = col.label + (state.sortKey===col.key ? ('<span class="arrow">'+(state.sortDir==='asc'?'▲':'▼')+'</span>') : '');
+        btn.addEventListener('click', function(){
+          if (state.sortKey === col.key){
+            state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            state.sortKey = col.key;
+            state.sortDir = 'desc';
+          }
+          saveConfig();
+          render();
+        });
+        th.appendChild(btn);
+      } else {
+        var span = document.createElement('div');
+        span.style.padding = '10px 14px';
+        span.style.color = 'var(--text-faint)';
+        span.textContent = col.label;
+        th.appendChild(span);
+      }
+      headRow.appendChild(th);
+    });
+  }
+
+  var visibleForCandles = [];
+
+  function renderMessage(html){
+    tbody.innerHTML = '<tr><td colspan="20" class="empty">' + html + '</td></tr>';
+    footNote.textContent = '';
+  }
+
+  function render(){
+    var allRows = computeRows();
+    var shown = allRows.slice(0, state.pageSize);
+    visibleForCandles = shown.map(function(r){ return r.instrument; });
+    scheduleCandleFetch();
+
+    document.getElementById('universeCount').textContent = Object.keys(state.byBase).length;
+    document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated);
+
+    var hiddenCount = state.hidden.size;
+    var hb = document.getElementById('hiddenToggle');
+    if (hiddenCount > 0){
+      hb.style.display = 'inline';
+      hb.textContent = 'Unhide ' + hiddenCount + ' row' + (hiddenCount>1?'s':'');
+    } else {
+      hb.style.display = 'none';
+    }
+
+    if (!shown.length){
+      tbody.innerHTML = '<tr><td colspan="20" class="empty">No coins match. Try clearing the search box.</td></tr>';
+      footNote.textContent = '';
+      return;
+    }
+
+    tbody.innerHTML = '';
+    shown.forEach(function(r, i){
+      var tr = document.createElement('tr');
+
+      var tdRank = document.createElement('td');
+      tdRank.className = 'rank num';
+      tdRank.textContent = i+1;
+      tr.appendChild(tdRank);
+
+      var tdSym = document.createElement('td');
+      var tvSymbol = 'BYBIT:' + r.base + 'USDT.P';
+      var tvUrl = 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(tvSymbol);
+      var symLink = document.createElement('a');
+      symLink.className = 'sym-cell sym-link';
+      symLink.href = tvUrl;
+      symLink.target = '_blank';
+      symLink.rel = 'noopener noreferrer';
+      symLink.title = 'Open ' + r.base + 'USDT.P on Bybit (TradingView)';
+      symLink.innerHTML = '<span class="chart-ico">◪</span><span class="sym">'+r.base+'</span><span class="quote">/'+r.quote+'</span>';
+      tdSym.appendChild(symLink);
+      tr.appendChild(tdSym);
+
+      var tdPrice = document.createElement('td');
+      tdPrice.className = 'num-col num';
+      tdPrice.textContent = fmtUsd(r.price);
+      tr.appendChild(tdPrice);
+
+      if (state.simpleView){
+        var tdMomS = document.createElement('td');
+        tdMomS.className = 'num-col';
+        tdMomS.innerHTML = '<span class="pill '+pctClass(r.mom)+'">'+fmtPct(r.mom)+'</span>';
+        tr.appendChild(tdMomS);
+
+        var tdOpp = document.createElement('td');
+        tdOpp.className = 'num-col';
+        if (r.simpleOpportunityScore == null){
+          tdOpp.innerHTML = '<span class="spin" title="Checking setup…"></span>';
+        } else {
+          var oppScore = r.simpleOpportunityScore;
+          var oppCls = oppScore>=75 ? 'pos' : (oppScore>=50 ? 'watch' : (oppScore>=25 ? 'flat' : 'neg'));
+          var oppTitle = state.mode === 'accumulation'
+            ? 'Base quality (deep ATH drawdown, proximity to its own low, range contraction, quiet volume, neutral RSI, dilution risk) combined with the current Regime verdict.'
+            : 'Setup quality (tightness, position in range, RSI, hasn\'t already popped, trend, timeframe agreement, dilution risk) combined with the current Regime verdict.';
+          tdOpp.innerHTML = '<div class="score-cell"><span class="score-bar"><i style="width:'+oppScore+'%"></i></span><span class="pill '+oppCls+'" title="'+oppTitle+'">'+r.simpleOpportunityLabel+' '+oppScore+'</span></div>';
+        }
+        tr.appendChild(tdOpp);
+
+        var tdCorrS = document.createElement('td');
+        tdCorrS.className = 'num-col';
+        tdCorrS.innerHTML = btcCorrCellHtml(r);
+        tr.appendChild(tdCorrS);
+
+        var tdWhy = document.createElement('td');
+        tdWhy.className = 'read-cell';
+        var narrS = narrateRow(r);
+        tdWhy.textContent = narrS.short;
+        if (narrS.full) tdWhy.title = narrS.full;
+        tr.appendChild(tdWhy);
+
+        var tdHideS = document.createElement('td');
+        var hideBtnS = document.createElement('button');
+        hideBtnS.className = 'hide-btn';
+        hideBtnS.title = 'Hide ' + r.base + ' — it doesn\'t belong here';
+        hideBtnS.textContent = '×';
+        hideBtnS.addEventListener('click', function(){
+          state.hidden.add(r.base);
+          saveHidden();
+          render();
+        });
+        tdHideS.appendChild(hideBtnS);
+        tr.appendChild(tdHideS);
+
+        tbody.appendChild(tr);
+        return;
+      }
+
+      var tdTrend = document.createElement('td');
+      if (r.distStatus === 'ok'){
+        if (r.trend === 'up'){
+          tdTrend.innerHTML = '<span class="pill pos">▲ Up</span>';
+        } else if (r.trend === 'down'){
+          tdTrend.innerHTML = '<span class="pill neg">▼ Down</span>';
+        } else if (r.trend === 'mixed'){
+          tdTrend.innerHTML = '<span class="pill flat">— Mixed</span>';
+        } else {
+          tdTrend.innerHTML = '<span class="muted">n/a</span>';
+        }
+        if (r.isIlliquid){
+          tdTrend.innerHTML += ' <span title="'+r.zeroVolBars+' of the last 10 bars had zero volume — Trend and other technicals may be unreliable here">⚠️</span>';
+        }
+      } else if (r.distStatus === 'error'){
+        tdTrend.innerHTML = '<span class="muted">n/a</span>';
+      } else {
+        tdTrend.innerHTML = '<span class="spin" title="Reading trend…"></span>';
+      }
+      tr.appendChild(tdTrend);
+
+      var tdAgree = document.createElement('td');
+      var complementaryLabel = state.candleTimeframe === '4h' ? 'Daily' : '4H';
+      if (r.trendAgree === 'agree'){
+        tdAgree.innerHTML = '<span class="pill pos" title="'+complementaryLabel+' trend confirms">✓</span>';
+      } else if (r.trendAgree === 'conflict'){
+        tdAgree.innerHTML = '<span class="pill neg" title="'+complementaryLabel+' trend disagrees — treat with caution">⚠</span>';
+      } else if (r.trendAgree === 'partial'){
+        tdAgree.innerHTML = '<span class="pill flat" title="'+complementaryLabel+' trend is Mixed — no clear confirmation either way">·</span>';
+      } else if (r.distStatus === 'ok' && r.altStatus === 'ok'){
+        tdAgree.innerHTML = '<span class="muted" title="Not enough history on one timeframe to compare">—</span>';
+      } else {
+        tdAgree.innerHTML = '<span class="spin" title="Checking '+complementaryLabel+' trend…"></span>';
+      }
+      tr.appendChild(tdAgree);
+
+      if (state.mode === 'breakout'){
+        var tdTrend200 = document.createElement('td');
+        if (r.distStatus === 'ok'){
+          if (r.trend200 === 'up'){
+            tdTrend200.innerHTML = '<span class="pill pos">▲ Up</span>';
+          } else if (r.trend200 === 'down'){
+            tdTrend200.innerHTML = '<span class="pill neg">▼ Down</span>';
+          } else if (r.trend200 === 'mixed'){
+            tdTrend200.innerHTML = '<span class="pill flat">— Mixed</span>';
+          } else {
+            tdTrend200.innerHTML = '<span class="muted" title="Under ~210 bars of history — falls back to the 20-period Trend column">n/a</span>';
+          }
+        } else if (r.distStatus === 'error'){
+          tdTrend200.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdTrend200.innerHTML = '<span class="spin" title="Computing 200 EMA…"></span>';
+        }
+        tr.appendChild(tdTrend200);
+      }
+
+      var tdMom = document.createElement('td');
+      tdMom.className = 'num-col';
+      tdMom.innerHTML = '<span class="pill '+pctClass(r.mom)+'">'+fmtPct(r.mom)+'</span>';
+      tr.appendChild(tdMom);
+
+      if (state.mode === 'accumulation'){
+        var tdMcap = document.createElement('td');
+        tdMcap.className = 'num-col num';
+        tdMcap.textContent = r.marketCap!=null ? fmtUsd(r.marketCap, {compact:true}) : '—';
+        tr.appendChild(tdMcap);
+
+        var tdAthPct = document.createElement('td');
+        tdAthPct.className = 'num-col num';
+        if (r.athPct != null){
+          var athDrawdownCls = r.athPct <= -60 ? 'pos' : (r.athPct >= -20 ? 'neg' : 'flat');
+          tdAthPct.innerHTML = '<span class="pill '+athDrawdownCls+'" title="'+(r.athDate?('ATH was '+new Date(r.athDate).toISOString().slice(0,10)):'')+'">'+r.athPct.toFixed(0)+'%</span>';
+        } else {
+          tdAthPct.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdAthPct);
+
+        var tdFdv = document.createElement('td');
+        tdFdv.className = 'num-col num';
+        if (r.fdvRatio != null){
+          var fdvCls = r.fdvRatio >= 2 ? 'neg' : (r.fdvRatio <= 1.15 ? 'pos' : 'flat');
+          tdFdv.innerHTML = '<span class="pill '+fdvCls+'" title="Fully diluted valuation vs current market cap -- higher means more future supply overhang">'+r.fdvRatio.toFixed(2)+'x</span>';
+        } else {
+          tdFdv.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdFdv);
+
+        var tdDistLow = document.createElement('td');
+        tdDistLow.className = 'num-col num';
+        if (r.distStatus === 'ok' && r.distFromLowPct != null){
+          tdDistLow.innerHTML = '+' + r.distFromLowPct.toFixed(1) + '%';
+        } else if (r.distStatus === 'error'){
+          tdDistLow.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdDistLow.innerHTML = '<span class="spin" title="Loading price history…"></span>';
+        }
+        tr.appendChild(tdDistLow);
+
+        var tdVolat = document.createElement('td');
+        tdVolat.className = 'num-col num';
+        if (r.distStatus === 'ok' && r.volatilityRatio != null){
+          tdVolat.innerHTML = '<span class="pill '+(r.volatilityRatio<0.8?'pos':(r.volatilityRatio>1.3?'neg':'flat'))+'">'+r.volatilityRatio.toFixed(2)+'x</span>';
+        } else if (r.distStatus === 'error' || r.volatilityRatio === null){
+          tdVolat.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdVolat.innerHTML = '<span class="spin" title="Loading range history…"></span>';
+        }
+        tr.appendChild(tdVolat);
+
+        var tdQuiet = document.createElement('td');
+        tdQuiet.className = 'num-col num';
+        if (r.volMcapPct != null){
+          tdQuiet.innerHTML = '<span class="pill '+(r.volMcapPct<1?'pos':(r.volMcapPct>5?'neg':'flat'))+'">'+r.volMcapPct.toFixed(1)+'%</span>';
+        } else {
+          tdQuiet.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdQuiet);
+
+        var tdRsi = document.createElement('td');
+        tdRsi.className = 'num-col num';
+        if (r.distStatus === 'ok' && r.rsi14 != null){
+          var rsiClass = (r.rsi14>=40 && r.rsi14<=55) ? 'pos' : 'flat';
+          tdRsi.innerHTML = '<span class="pill '+rsiClass+'">'+r.rsi14.toFixed(0)+'</span>';
+        } else if (r.distStatus === 'error' || r.rsi14 === null){
+          tdRsi.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdRsi.innerHTML = '<span class="spin" title="Computing RSI…"></span>';
+        }
+        tr.appendChild(tdRsi);
+
+        var tdDonchWidth = document.createElement('td');
+        tdDonchWidth.className = 'num-col num';
+        if (r.distStatus === 'ok' && r.donchWidthPct != null){
+          tdDonchWidth.innerHTML = r.donchWidthPct.toFixed(1) + '%';
+        } else if (r.distStatus === 'error' || r.donchWidthPct === null){
+          tdDonchWidth.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdDonchWidth.innerHTML = '<span class="spin" title="Loading price history…"></span>';
+        }
+        tr.appendChild(tdDonchWidth);
+
+        var tdChanPos = document.createElement('td');
+        tdChanPos.className = 'num-col num';
+        if (r.distStatus === 'ok' && r.channelPosPct != null){
+          var cp = r.channelPosPct;
+          var edgeDist = Math.min(cp, 100-cp);
+          var cpClass = edgeDist<=10 ? 'watch' : 'flat';
+          tdChanPos.innerHTML = '<span class="pill '+cpClass+'" title="0% = at the 20-bar low, 100% = at the 20-bar high">'+cp.toFixed(0)+'%</span>';
+        } else if (r.distStatus === 'error' || r.channelPosPct === null){
+          tdChanPos.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdChanPos.innerHTML = '<span class="spin" title="Loading price history…"></span>';
+        }
+        tr.appendChild(tdChanPos);
+
+        var tdBtcCorrA = document.createElement('td');
+        tdBtcCorrA.className = 'num-col num';
+        tdBtcCorrA.innerHTML = btcCorrCellHtml(r);
+        tr.appendChild(tdBtcCorrA);
+      } else {
+        var tdMom7d = document.createElement('td');
+        tdMom7d.className = 'num-col';
+        tdMom7d.innerHTML = r.mom7d!=null ? '<span class="pill '+pctClass(r.mom7d)+'">'+fmtPct(r.mom7d)+'</span>' : '<span class="muted">—</span>';
+        tr.appendChild(tdMom7d);
+
+        var tdRs = document.createElement('td');
+        tdRs.className = 'num-col';
+        tdRs.innerHTML = r.base==='BTC' ? '<span class="muted">—</span>' : '<span class="pill '+pctClass(r.rs)+'">'+fmtPct(r.rs)+'</span>';
+        tr.appendChild(tdRs);
+
+        var tdMcapB = document.createElement('td');
+        tdMcapB.className = 'num-col num';
+        tdMcapB.innerHTML = r.marketCap!=null ? (fmtUsd(r.marketCap, {compact:true}) + (r.marketCapRank ? ' <span class="quote">#'+r.marketCapRank+'</span>' : '')) : '—';
+        tr.appendChild(tdMcapB);
+
+        var tdVolMcap = document.createElement('td');
+        tdVolMcap.className = 'num-col num';
+        if (r.volMcapPct != null){
+          tdVolMcap.innerHTML = '<span class="pill '+(r.volMcapPct>=3?'pos':(r.volMcapPct<0.5?'neg':'flat'))+'">'+r.volMcapPct.toFixed(1)+'%</span>';
+        } else {
+          tdVolMcap.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdVolMcap);
+
+        var tdAthPctB = document.createElement('td');
+        tdAthPctB.className = 'num-col num';
+        if (r.athPct != null){
+          var athClsB = r.athPct >= -3 ? 'watch' : (r.athPct >= -15 ? 'pos' : 'flat');
+          var athLabel = r.athPct >= -0.5 ? 'At ATH' : r.athPct.toFixed(0)+'%';
+          tdAthPctB.innerHTML = '<span class="pill '+athClsB+'" title="'+(r.athDate?('ATH was '+new Date(r.athDate).toISOString().slice(0,10)):'')+'">'+athLabel+'</span>';
+        } else {
+          tdAthPctB.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdAthPctB);
+
+        var tdRangePos = document.createElement('td');
+        tdRangePos.className = 'num-col num';
+        if (r.rangePos24h != null){
+          var rp = r.rangePos24h;
+          var rpCls = rp >= 85 ? 'watch' : (rp <= 15 ? 'flat' : 'flat');
+          tdRangePos.innerHTML = '<span class="pill '+rpCls+'" title="0% = today\'s low, 100% = today\'s high">'+rp.toFixed(0)+'%</span>';
+        } else {
+          tdRangePos.innerHTML = '<span class="muted">—</span>';
+        }
+        tr.appendChild(tdRangePos);
+
+        var tdDonch = document.createElement('td');
+        tdDonch.className = 'num-col num';
+        if (r.distStatus === 'ok'){
+          if (!r.donchSide){
+            tdDonch.innerHTML = '<span class="muted" title="No aligned trend — not a valid Donchian setup right now">—</span>';
+          } else {
+            var dd = r.donchDisplayPct;
+            if (dd == null){
+              tdDonch.innerHTML = '<span class="muted">n/a</span>';
+            } else {
+              var arrow = r.donchSide === 'long' ? '▲' : '▼';
+              var donchClass = dd <= 0.05 ? 'pos' : (dd <= 3 ? 'watch' : 'flat');
+              var donchLabel = dd <= 0.05 ? (arrow + ' Broke') : (arrow + ' -' + dd.toFixed(1) + '%');
+              var donchTitle = r.donchSide === 'long'
+                ? 'Distance to a fresh 20-bar high (long breakout)'
+                : 'Distance to a fresh 20-bar low (short breakout)';
+              tdDonch.innerHTML = '<span class="pill ' + donchClass + '" title="' + donchTitle + '">' + donchLabel + '</span>';
+            }
+          }
+        } else if (r.distStatus === 'error'){
+          tdDonch.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdDonch.innerHTML = '<span class="spin" title="Loading price history…"></span>';
+        }
+        tr.appendChild(tdDonch);
+
+        var tdBtcCorr = document.createElement('td');
+        tdBtcCorr.className = 'num-col num';
+        tdBtcCorr.innerHTML = btcCorrCellHtml(r);
+        tr.appendChild(tdBtcCorr);
+
+        var tdSetup = document.createElement('td');
+        if (r.distStatus === 'ok'){
+          if (r.validEarlyEntry === true){
+            tdSetup.innerHTML = '<span class="pill watch" title="Tight Donchian range, price in the upper half of it, healthy RSI, hasn\'t already popped, trend not down, no timeframe conflict, limited dilution risk, liquid">✓ Coiled</span>';
+          } else {
+            tdSetup.innerHTML = '<span class="muted">—</span>';
+          }
+        } else {
+          tdSetup.innerHTML = '<span class="spin" title="Checking setup…"></span>';
+        }
+        tr.appendChild(tdSetup);
+
+        var tdBreakout = document.createElement('td');
+        if (r.distStatus === 'ok'){
+          var bs = r.breakoutStatus;
+          if (!bs){
+            tdBreakout.innerHTML = '<span class="muted" title="No 20-bar breakout detected in the last '+BREAKOUT_LOOKBACK+' bars">—</span>';
+          } else {
+            // watchVerb: what you're actually watching for on the next close -- "hold" while
+            // still above the trigger, "reclaim" once it's already lost it (failed).
+            var watchVerb = bs.phase === 'failed' ? 'reclaim' : 'hold';
+            var pctTxt = bs.pctFromTrigger==null ? '' : (' (' + (bs.pctFromTrigger>=0?'+':'') + bs.pctFromTrigger.toFixed(1) + '%)');
+            var watchLine = watchVerb + ' > ' + fmtUsd(bs.triggerLevel) + pctTxt;
+            var bsMeta = {
+              fresh:      {cls:'watch', label:'🆕 Fresh', title:'Closed above the 20-bar high '+bs.barsAgo+' bar(s) ago — just triggered, still tight. Watch level: needs to keep closing above '+fmtUsd(bs.triggerLevel)+' to stay valid.'},
+              confirming: {cls:'pos',   label:'✅ Confirming', title:'Broke out '+bs.barsAgo+' bars ago and is still holding above that trigger level ('+fmtUsd(bs.triggerLevel)+') — pullback-and-hold, not a failure. Watch level: a close back below '+fmtUsd(bs.triggerLevel)+' would flip this to failed.'},
+              extended:   {cls:'flat',  label:'⚠ Extended', title:'Broke out '+bs.barsAgo+' bars ago and is still above trigger, but this is old news now — chasing it here has worse R:R than the original breakout. Watch level: '+fmtUsd(bs.triggerLevel)+' is now the line that, if lost, confirms exhaustion.'},
+              failed:     {cls:'neg',   label:'❌ Failed', title:'Broke out '+bs.barsAgo+' bars ago but has since closed back below the trigger level ('+fmtUsd(bs.triggerLevel)+') — the breakout did not hold. Watch level: needs a close back above '+fmtUsd(bs.triggerLevel)+' to re-confirm before treating this as valid again.'}
+            }[bs.phase];
+            tdBreakout.innerHTML = '<span class="pill '+bsMeta.cls+'" title="'+bsMeta.title+'">'+bsMeta.label+'</span>'
+              + '<div class="watch-level" title="'+bsMeta.title+'">'+watchLine+'</div>';
+          }
+        } else if (r.distStatus === 'error'){
+          tdBreakout.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdBreakout.innerHTML = '<span class="spin" title="Scanning breakout history…"></span>';
+        }
+        tr.appendChild(tdBreakout);
+      }
+
+      var tdRead = document.createElement('td');
+      tdRead.className = 'read-cell';
+      var narr = narrateRow(r);
+      tdRead.textContent = narr.short;
+      if (narr.full) tdRead.title = narr.full;
+      tr.appendChild(tdRead);
+
+      var tdScore = document.createElement('td');
+      tdScore.className = 'num-col';
+      tdScore.innerHTML = '<div class="score-cell"><span class="score-bar"><i style="width:'+r.score+'%"></i></span><span class="score-val num">'+r.score+'</span></div>';
+      tr.appendChild(tdScore);
+
+      var tdHide = document.createElement('td');
+      var hideBtn = document.createElement('button');
+      hideBtn.className = 'hide-btn';
+      hideBtn.title = 'Hide ' + r.base + ' — it doesn\'t belong here';
+      hideBtn.textContent = '×';
+      hideBtn.addEventListener('click', function(){
+        state.hidden.add(r.base);
+        saveHidden();
+        render();
+      });
+      tdHide.appendChild(hideBtn);
+      tr.appendChild(tdHide);
+
+      tbody.appendChild(tr);
+    });
+
+    footNote.textContent = 'Showing ' + shown.length + ' of ' + allRows.length + ' filtered coins' +
+      (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '.';
+  }
+
+  document.getElementById('hiddenToggle').addEventListener('click', function(){
+    state.hidden = new Set();
+    saveHidden();
+    render();
+  });
+
+  // ---------- controls wiring ----------
+  document.getElementById('pageSize').value = String(state.pageSize);
+  document.getElementById('bybitOnly').checked = state.bybitOnly;
+  document.getElementById('hideIlliquid').checked = state.hideIlliquid;
+  document.getElementById('candleTimeframe').value = state.candleTimeframe;
+  document.getElementById('trendFilter').value = state.trendFilter;
+  document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
+  document.getElementById('simpleView').checked = state.simpleView;
+  function applyViewVisibility(){
+    document.getElementById('advancedControls').style.display = state.simpleView ? 'none' : 'contents';
+    var validInSimple = ['rank','symbol','price','mom','opportunity'];
+    if (state.simpleView && validInSimple.indexOf(state.sortKey) === -1){
+      state.sortKey = 'opportunity';
+      state.sortDir = 'desc';
+    }
+  }
+  applyViewVisibility();
+  document.getElementById('simpleView').addEventListener('change', function(e){
+    state.simpleView = e.target.checked;
+    applyViewVisibility();
+    saveConfig();
+    renderHead();
+    render();
+  });
+  document.getElementById('search').addEventListener('input', function(e){
+    state.search = e.target.value.trim();
+    render();
+  });
+  document.getElementById('pageSize').addEventListener('change', function(e){
+    state.pageSize = parseInt(e.target.value, 10);
+    saveConfig();
+    render();
+  });
+  document.getElementById('bybitOnly').addEventListener('change', function(e){
+    state.bybitOnly = e.target.checked;
+    saveConfig();
+    render();
+  });
+  document.getElementById('hideIlliquid').addEventListener('change', function(e){
+    state.hideIlliquid = e.target.checked;
+    saveConfig();
+    render();
+  });
+  document.getElementById('trendFilter').addEventListener('change', function(e){
+    state.trendFilter = e.target.value;
+    saveConfig();
+    render();
+  });
+  document.getElementById('candleTimeframe').addEventListener('change', function(e){
+    state.candleTimeframe = e.target.value;
+    state.candles = {};
+    state.candlesAlt = {}; // complementary timeframe swaps too
+    state.btcSeries = null; // BTC-corr series is timeframe-specific too
+    loadBtcSeries();
+    saveConfig();
+    render();
+  });
+  document.getElementById('earlyEntryOnly').addEventListener('change', function(e){
+    state.earlyEntryOnly = e.target.checked;
+    saveConfig();
+    render();
+  });
+
+  function renderWeightsUI(){
+    var container = document.getElementById('weights');
+    container.innerHTML = '';
+    var weights = currentWeights();
+    var sliderEls = {};
+    MODES[state.mode].metrics.forEach(function(m){
+      var wrap = document.createElement('div');
+      wrap.className = 'weight';
+      var row = document.createElement('div');
+      row.className = 'row';
+      var labelSpan = document.createElement('span');
+      labelSpan.textContent = m.label;
+      var valSpan = document.createElement('span');
+      valSpan.className = 'val';
+      valSpan.textContent = weights[m.key];
+      row.appendChild(labelSpan);
+      row.appendChild(valSpan);
+      var slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '100';
+      slider.value = weights[m.key];
+      slider.addEventListener('input', function(){
+        currentWeights()[m.key] = parseInt(slider.value, 10);
+        valSpan.textContent = slider.value;
+        syncPresetSelect();
+        render();
+      });
+      slider.addEventListener('change', saveConfig);
+      wrap.appendChild(row);
+      wrap.appendChild(slider);
+      container.appendChild(wrap);
+      sliderEls[m.key] = {slider:slider, valSpan:valSpan};
+    });
+    weightSliderEls = sliderEls;
+    renderPresetSelect();
+  }
+
+  var weightSliderEls = {};
+
+  function renderPresetSelect(){
+    var sel = document.getElementById('presetSelect');
+    sel.innerHTML = '';
+    PRESETS[state.mode].forEach(function(p, i){
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+    var customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom';
+    sel.appendChild(customOpt);
+    syncPresetSelect();
+  }
+  function syncPresetSelect(){
+    var sel = document.getElementById('presetSelect');
+    var idx = matchingPresetIndex(state.mode);
+    sel.value = idx >= 0 ? String(idx) : 'custom';
+  }
+  function applyPreset(mode, index){
+    var preset = PRESETS[mode][index];
+    if (!preset) return;
+    Object.assign(state.weightsByMode[mode], preset.weights);
+    if (state.mode === mode){
+      Object.keys(weightSliderEls).forEach(function(key){
+        var val = state.weightsByMode[mode][key];
+        weightSliderEls[key].slider.value = val;
+        weightSliderEls[key].valSpan.textContent = val;
+      });
+    }
+    saveConfig();
+    render();
+  }
+  document.getElementById('presetSelect').addEventListener('change', function(e){
+    if (e.target.value === 'custom') return;
+    applyPreset(state.mode, parseInt(e.target.value, 10));
+  });
+
+  function updateEarlyEntryLabel(){
+    var textEl = document.getElementById('earlyEntryText');
+    if (textEl) textEl.textContent = state.mode === 'accumulation' ? 'Valid Base only (strict)' : 'Early Entry only (strict)';
+  }
+  function setMode(mode){
+    state.mode = mode;
+    document.querySelectorAll('.mode-tab').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-mode') === mode);
+    });
+    updateEarlyEntryLabel();
+    renderWeightsUI();
+    saveConfig();
+    renderHead();
+    render();
+  }
+  document.querySelectorAll('.mode-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){ setMode(btn.getAttribute('data-mode')); });
+  });
+
+  renderWeightsUI();
+  updateEarlyEntryLabel();
+  document.querySelectorAll('.mode-tab').forEach(function(btn){
+    btn.classList.toggle('active', btn.getAttribute('data-mode') === state.mode);
+  });
+
+  document.getElementById('resetConfig').addEventListener('click', function(){
+    state.weightsByMode = freshWeightsByMode();
+    state.pageSize = DEFAULT_CONFIG.pageSize;
+    state.sortKey = DEFAULT_CONFIG.sortKey;
+    state.sortDir = DEFAULT_CONFIG.sortDir;
+    state.bybitOnly = DEFAULT_CONFIG.bybitOnly;
+    state.candleTimeframe = DEFAULT_CONFIG.candleTimeframe;
+    state.hideIlliquid = DEFAULT_CONFIG.hideIlliquid;
+    state.trendFilter = DEFAULT_CONFIG.trendFilter;
+    state.earlyEntryOnly = DEFAULT_CONFIG.earlyEntryOnly;
+    state.candles = {};
+    state.candlesAlt = {};
+    renderWeightsUI();
+    document.getElementById('pageSize').value = String(state.pageSize);
+    document.getElementById('bybitOnly').checked = state.bybitOnly;
+    document.getElementById('hideIlliquid').checked = state.hideIlliquid;
+    document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
+    document.getElementById('candleTimeframe').value = state.candleTimeframe;
+    document.getElementById('trendFilter').value = state.trendFilter;
+    localStorage.removeItem('screener_config_sa');
+    renderHead();
+    render();
+  });
+
+  // ---------- candle math ----------
+  function rangePct(b){
+    var h = parseFloat(b.high), l = parseFloat(b.low), c = parseFloat(b.close);
+    return c > 0 ? ((h-l)/c)*100 : 0;
+  }
+  function computeRSI14(bars){
+    var period = 14;
+    if (bars.length < period+1) return null;
+    var closes = bars.map(function(b){ return parseFloat(b.close); }).reverse();
+    var gains = 0, losses = 0, i;
+    for (i=1; i<=period; i++){
+      var diff = closes[i]-closes[i-1];
+      if (diff >= 0) gains += diff; else losses += -diff;
+    }
+    var avgGain = gains/period, avgLoss = losses/period;
+    for (i=period+1; i<closes.length; i++){
+      var d = closes[i]-closes[i-1];
+      var g = d>0 ? d : 0, l = d<0 ? -d : 0;
+      avgGain = (avgGain*(period-1)+g)/period;
+      avgLoss = (avgLoss*(period-1)+l)/period;
+    }
+    if (avgLoss === 0) return 100;
+    var rs = avgGain/avgLoss;
+    return 100 - (100/(1+rs));
+  }
+  function sma(arr, count, endExclusive){
+    var start = endExclusive - count;
+    if (start < 0) return null;
+    var slice = arr.slice(start, endExclusive);
+    return slice.reduce(function(s,v){ return s+v; }, 0) / slice.length;
+  }
+  function computeTrend(bars){
+    var closes = bars.map(function(b){ return parseFloat(b.close); }).reverse();
+    var n = closes.length;
+    if (n < 25) return null;
+    var smaNow = sma(closes, 20, n);
+    var smaPrior = sma(closes, 20, n-5);
+    if (smaNow == null || smaPrior == null) return null;
+    var last = closes[n-1];
+    var aboveMA = last > smaNow;
+    var risingMA = smaNow > smaPrior;
+    if (aboveMA && risingMA) return 'up';
+    if (!aboveMA && !risingMA) return 'down';
+    return 'mixed';
+  }
+  function ema(arrAsc, period){
+    if (arrAsc.length < period) return null;
+    var k = 2/(period+1);
+    var e = arrAsc.slice(0, period).reduce(function(s,v){ return s+v; }, 0) / period;
+    for (var i=period; i<arrAsc.length; i++){ e = arrAsc[i]*k + e*(1-k); }
+    return e;
+  }
+  function computeTrend200(bars){
+    // Real 200-period EMA trend filter -- now possible because the raw REST
+    // candlestick endpoint returns up to 300 bars, unlike the 50-bar-capped
+    // connector-tool version this screener was ported from.
+    var closes = bars.map(function(b){ return parseFloat(b.close); }).reverse(); // oldest -> newest
+    var n = closes.length;
+    if (n < 210) return null; // need a 200 EMA plus a 10-bar-ago comparison point
+    var emaNow = ema(closes, 200);
+    var emaPrior = ema(closes.slice(0, n-10), 200);
+    if (emaNow == null || emaPrior == null) return null;
+    var last = closes[n-1];
+    var above = last > emaNow;
+    var rising = emaNow > emaPrior;
+    if (above && rising) return 'up';
+    if (!above && !rising) return 'down';
+    return 'mixed';
+  }
+
+  // ---------- plain-language narration ----------
+  function fmtSignPct1(v){ return (v>0?'+':'') + v.toFixed(1) + '%'; }
+
+  function narrateBreakout(r){
+    var earlyTag = r.validEarlyEntry===true ? 'coiled pre-breakout' : null;
+    var momTag = r.mom>=10 ? 'Strong momentum' : (r.mom>=3 ? 'Building momentum' : (r.mom<=-3 ? 'Fading' : 'Flat momentum'));
+    var accelTag = (r.mom!=null && r.mom7d!=null) ? (r.mom >= 3 && r.mom7d <= 2 ? 'fresh move' : (r.mom <= 1 && r.mom7d >= 10 ? 'cooling off' : null)) : null;
+    var athTag = r.athPct==null ? null : (r.athPct >= -3 ? 'at ATH' : (r.athPct >= -15 ? 'near ATH' : null));
+    var rangeTag = r.rangePos24h==null ? null : (r.rangePos24h >= 90 ? 'pinned to today\'s high' : (r.rangePos24h <= 10 ? 'pinned to today\'s low' : null));
+    var convTag = r.volMcapPct==null ? null : (r.volMcapPct >= 5 ? 'heavy conviction volume' : (r.volMcapPct < 0.3 ? 'thin conviction' : null));
+    var rsTag = (r.base==='BTC' || r.rs==null) ? null : (r.rs>=5 ? 'leading BTC' : (r.rs<=-5 ? 'lagging BTC' : null));
+    var donchTag = r.donchSide ? (r.donchDisplayPct!=null && r.donchDisplayPct<=0.5 ? 'at Donchian trigger' : null) : null;
+    var conflictTag = r.trendAgree==='conflict' ? 'timeframes disagree' : null;
+    var divergeTag = r.divergingFromBtc ? (r.mom>0 ? 'diverging from BTC (up while BTC down)' : 'diverging from BTC (down while BTC up)') : null;
+    var breakoutTag = r.breakoutStatus ? ({
+      fresh: 'fresh breakout', confirming: 'confirming breakout',
+      extended: 'extended breakout — chasing', failed: 'failed breakout'
+    })[r.breakoutStatus.phase] : null;
+    var parts = [earlyTag, breakoutTag, divergeTag, momTag, donchTag, accelTag, athTag, rangeTag, convTag, conflictTag].filter(Boolean);
+    var short = parts.slice(0,2).join(', ') || momTag;
+    var fullParts = [fmtSignPct1(r.mom) + ' today', (r.mom7d!=null ? fmtSignPct1(r.mom7d)+' over 7d' : null)].filter(Boolean);
+    if (r.breakoutStatus){
+      var bsWatchVerb = r.breakoutStatus.phase === 'failed' ? 'reclaim' : 'hold';
+      var bsPct = r.breakoutStatus.pctFromTrigger;
+      var bsPctTxt = bsPct==null ? '' : (', currently '+(bsPct>=0?'+':'')+bsPct.toFixed(1)+'% vs it');
+      fullParts.push('broke out '+r.breakoutStatus.barsAgo+' bar(s) ago, now '+r.breakoutStatus.phase+' — watch level: '+bsWatchVerb+' above '+fmtUsd(r.breakoutStatus.triggerLevel)+bsPctTxt);
+    }
+    if (r.athPct!=null) fullParts.push(r.athPct.toFixed(0)+'% from ATH'+(r.athDate?(' ('+new Date(r.athDate).toISOString().slice(0,10)+')'):''));
+    if (r.rangePos24h!=null) fullParts.push(r.rangePos24h.toFixed(0)+'% up today\'s range');
+    if (r.volMcapPct!=null) fullParts.push(r.volMcapPct.toFixed(1)+'% vol/mcap');
+    if (rsTag) fullParts.push(fmtSignPct1(r.rs)+' vs BTC');
+    if (r.btcCorr!=null) fullParts.push('BTC corr '+(r.btcCorr>=0?'+':'')+r.btcCorr.toFixed(2));
+    if (r.donchSide && r.donchDisplayPct!=null) fullParts.push(r.donchDisplayPct.toFixed(1)+'% from a fresh 20-bar '+(r.donchSide==='long'?'high':'low'));
+    if (r.trendAgree) fullParts.push('timeframes '+(r.trendAgree==='agree'?'agree':(r.trendAgree==='conflict'?'conflict':'mixed')));
+    if (r.marketCap!=null) fullParts.push(fmtUsd(r.marketCap,{compact:true})+' market cap'+(r.marketCapRank?(' (#'+r.marketCapRank+')'):''));
+    return {short:short, full: fullParts.join(', ') + '.'};
+  }
+
+  function narrateAccumulation(r){
+    if (r.distStatus !== 'ok') return {short:'Loading…', full:''};
+    var lowTag = r.distFromLowPct==null ? null : (r.distFromLowPct<=5 ? 'tight to low' : (r.distFromLowPct<=15 ? 'near low' : null));
+    var volatTag = r.volatilityRatio==null ? null : (r.volatilityRatio<0.8 ? 'contracting range' : (r.volatilityRatio>1.3 ? 'expanding range' : null));
+    var quietTag = r.volMcapPct==null ? null : (r.volMcapPct<0.5 ? 'quiet volume' : (r.volMcapPct>5 ? 'getting noticed' : null));
+    var tightTag = r.donchWidthPct==null ? null : (r.donchWidthPct<=8 ? 'coiled channel' : null);
+    var edgeTag = r.channelPosPct==null ? null : (Math.min(r.channelPosPct,100-r.channelPosPct)<=10 ? 'pinned to channel edge' : null);
+    var deepTag = r.athPct==null ? null : (r.athPct<=-70 ? 'deep discount to ATH' : null);
+    var dilutionTag = r.fdvRatio==null ? null : (r.fdvRatio>=2 ? 'heavy future dilution' : null);
+    var divergeTag = r.divergingFromBtc ? (r.mom>0 ? 'diverging from BTC (up while BTC down)' : 'diverging from BTC (down while BTC up)') : null;
+    var parts = [edgeTag, deepTag, divergeTag, lowTag, tightTag, volatTag, quietTag, dilutionTag].filter(Boolean);
+    var short = parts.slice(0,2).join(', ') || 'No clear base yet';
+    var fullParts = [];
+    if (r.distFromLowPct!=null) fullParts.push(r.distFromLowPct.toFixed(1)+'% above its low');
+    if (r.athPct!=null) fullParts.push(r.athPct.toFixed(0)+'% from ATH');
+    if (r.volatilityRatio!=null) fullParts.push('range '+r.volatilityRatio.toFixed(2)+'x recent vs. prior weeks');
+    if (r.volMcapPct!=null) fullParts.push(r.volMcapPct.toFixed(1)+'% vol/mcap');
+    if (r.rsi14!=null) fullParts.push('RSI '+r.rsi14.toFixed(0));
+    if (r.donchWidthPct!=null) fullParts.push('20-bar channel '+r.donchWidthPct.toFixed(1)+'% wide');
+    if (r.channelPosPct!=null) fullParts.push(r.channelPosPct.toFixed(0)+'% up its own channel (0%=low, 100%=high)');
+    if (r.btcCorr!=null) fullParts.push('BTC corr '+(r.btcCorr>=0?'+':'')+r.btcCorr.toFixed(2));
+    if (r.fdvRatio!=null) fullParts.push('FDV '+r.fdvRatio.toFixed(2)+'x market cap');
+    return {short:short, full: fullParts.join(', ') + '.'};
+  }
+
+  function narrateRow(r){
+    if (state.mode === 'accumulation') return narrateAccumulation(r);
+    return narrateBreakout(r);
+  }
+
+  // ---------- http helper ----------
+  function fetchJson(url){
+    return fetch(url).then(function(resp){
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    });
+  }
+
+  // ---------- candle lazy-loading ----------
+  var CANDLE_COUNT = 300;
+  function complementaryTimeframe(){ return state.candleTimeframe === '4h' ? '1D' : '4h'; }
+
+  // Pearson correlation of two equal-length numeric arrays (used for BTC-correlation below).
+  function pearsonCorrelation(xs, ys){
+    var n = xs.length;
+    if (n < 8) return null;
+    var mx = xs.reduce(function(s,v){return s+v;},0)/n;
+    var my = ys.reduce(function(s,v){return s+v;},0)/n;
+    var num=0, dx2=0, dy2=0;
+    for (var i=0;i<n;i++){
+      var dx=xs[i]-mx, dy=ys[i]-my;
+      num += dx*dy; dx2 += dx*dx; dy2 += dy*dy;
+    }
+    if (dx2===0 || dy2===0) return null;
+    return num/Math.sqrt(dx2*dy2);
+  }
+
+  // ---------- breakout confirmation status ----------
+  // Scans back through already-fetched candle history for the most recent bar whose close broke
+  // above the rolling 20-bar Donchian upper channel computed from the bars BEFORE it (a genuine
+  // breakout event, not just "currently sitting near the top of the range"). Then checks whether
+  // price has held above that trigger level since -- the same "confirmed vs extended vs failed"
+  // read a discretionary trader gets from eyeballing a chart, done here from raw bars.
+  var BREAKOUT_LOOKBACK = 30; // how many bars back to search for the most recent breakout event
+  var BREAKOUT_PERIOD = 20;   // matches the Donchian(20) used everywhere else in this file
+  function computeBreakoutStatus(bars){
+    var maxI = Math.min(BREAKOUT_LOOKBACK, bars.length - BREAKOUT_PERIOD - 1);
+    for (var i = 0; i <= maxI; i++){
+      var priorSlice = bars.slice(i+1, i+1+BREAKOUT_PERIOD);
+      if (priorSlice.length < BREAKOUT_PERIOD) break;
+      var upperAtI = Math.max.apply(null, priorSlice.map(function(b){ return parseFloat(b.high); }));
+      var closeAtI = parseFloat(bars[i].close);
+      var prevClose = parseFloat(bars[i+1].close);
+      var justCrossed = closeAtI > upperAtI && prevClose <= upperAtI;
+      if (justCrossed){
+        var lastClose = parseFloat(bars[0].close);
+        var holdingAbove = lastClose > upperAtI;
+        var phase;
+        if (!holdingAbove) phase = 'failed';
+        else if (i <= 2) phase = 'fresh';
+        else if (i <= 15) phase = 'confirming';
+        else phase = 'extended';
+        // How far the LATEST close sits from the trigger right now, as a live %. This is the
+        // "what level do I actually watch" number -- positive means still holding above it,
+        // negative means it's already lost it (only relevant for a 'failed' read).
+        var pctFromTrigger = upperAtI > 0 ? ((lastClose - upperAtI) / upperAtI) * 100 : null;
+        return { phase: phase, barsAgo: i, triggerLevel: upperAtI, pctFromTrigger: pctFromTrigger };
+      }
+    }
+    return null;
+  }
+
+  function processCandleBars(raw, btcSeriesMap){
+    if (!raw.length) return {status:'error'};
+    // Raw API returns oldest -> newest; normalize to newest-first like the rest of this file expects.
+    var bars = raw.slice().sort(function(a,b){ return b.t - a.t; }).map(function(b){
+      var close = parseFloat(b.c);
+      var baseVol = parseFloat(b.v);
+      return { high: b.h, low: b.l, close: b.c, volume: b.v, volume_usd: baseVol * close, t: b.t };
+    });
+    // BTC correlation: bar-over-bar % returns, this coin vs BTC, over the last ~30 bars of the
+    // SAME timeframe -- matched by exact bar timestamp so a gap in either series doesn't misalign
+    // the pairs. A rolling read, not all-time, so it reflects the current regime, not history.
+    var btcCorr = null;
+    if (btcSeriesMap){
+      var xs = [], ys = [];
+      for (var i=0; i<Math.min(bars.length-1, 30); i++){
+        var curT = bars[i].t, prevT = bars[i+1].t;
+        var curClose = parseFloat(bars[i].close), prevClose = parseFloat(bars[i+1].close);
+        var btcCur = btcSeriesMap[curT], btcPrev = btcSeriesMap[prevT];
+        if (btcCur==null || btcPrev==null || prevClose<=0 || btcPrev<=0) continue;
+        xs.push((curClose-prevClose)/prevClose);
+        ys.push((btcCur-btcPrev)/btcPrev);
+      }
+      btcCorr = pearsonCorrelation(xs, ys);
+    }
+    var high = Math.max.apply(null, bars.map(function(b){ return parseFloat(b.high); }));
+    var low = Math.min.apply(null, bars.map(function(b){ return parseFloat(b.low); }));
+    var last = parseFloat(bars[0].close);
+    var distPct = high > 0 ? ((high-last)/high)*100 : null;
+    var distFromLowPct = low > 0 ? ((last-low)/low)*100 : null;
+    var todayVol = parseFloat(bars[0].volume_usd);
+    var priorBars = bars.slice(1, 15);
+    var avgVol = null, volSurge = null;
+    if (priorBars.length >= 5){
+      avgVol = priorBars.reduce(function(s,b){ return s + parseFloat(b.volume_usd); }, 0) / priorBars.length;
+      volSurge = avgVol > 0 ? (todayVol / avgVol) : null;
+    }
+    var recentRange = bars.slice(0, 7);
+    var priorRange = bars.slice(7, 21);
+    var volatilityRatio = null;
+    if (recentRange.length >= 5 && priorRange.length >= 10){
+      var recentAvg = recentRange.reduce(function(s,b){ return s+rangePct(b); }, 0) / recentRange.length;
+      var priorAvg = priorRange.reduce(function(s,b){ return s+rangePct(b); }, 0) / priorRange.length;
+      volatilityRatio = priorAvg > 0 ? (recentAvg/priorAvg) : null;
+    }
+    var rsi14 = computeRSI14(bars);
+    var trend = computeTrend(bars);
+    var trend200 = computeTrend200(bars);
+    var donch20 = bars.slice(0, 20);
+    var donchHigh20 = donch20.length >= 20 ? Math.max.apply(null, donch20.map(function(b){ return parseFloat(b.high); })) : null;
+    var donchLow20 = donch20.length >= 20 ? Math.min.apply(null, donch20.map(function(b){ return parseFloat(b.low); })) : null;
+    var donchDistPct = (donchHigh20 && donchHigh20 > 0) ? ((donchHigh20-last)/donchHigh20)*100 : null;
+    var donchDistLowPct = (donchLow20 != null && donchLow20 > 0) ? ((last-donchLow20)/donchLow20)*100 : null;
+    var donchWidthPct = (donchHigh20 != null && donchLow20 != null && last > 0) ? ((donchHigh20-donchLow20)/last)*100 : null;
+    var channelPosPct = (donchHigh20 != null && donchLow20 != null && donchHigh20 > donchLow20)
+      ? ((last - donchLow20) / (donchHigh20 - donchLow20)) * 100 : null;
+    var breakoutStatus = computeBreakoutStatus(bars);
+    var recentBars = bars.slice(0, 10);
+    var zeroVolBars = recentBars.filter(function(b){ return parseFloat(b.volume) === 0; }).length;
+    var isIlliquid = recentBars.length >= 5 && zeroVolBars >= 3;
+    return {
+      status:'ok', high50:high, distPct:distPct, volSurge:volSurge,
+      low50:low, distFromLowPct:distFromLowPct, volatilityRatio:volatilityRatio, rsi14:rsi14,
+      trend:trend, trend200:trend200, donchDistPct:donchDistPct, donchDistLowPct:donchDistLowPct, donchWidthPct:donchWidthPct,
+      channelPosPct:channelPosPct, breakoutStatus:breakoutStatus, isIlliquid:isIlliquid, zeroVolBars:zeroVolBars, btcCorr:btcCorr
+    };
+  }
+
+  function fetchCandles(symbol, timeframe, withBtcCorr){
+    var url = 'https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=' + encodeURIComponent(symbol) + '&timeframe=' + encodeURIComponent(timeframe) + '&count=' + CANDLE_COUNT;
+    return fetchJson(url).then(function(d){
+      var btcMap = (withBtcCorr && timeframe === state.candleTimeframe) ? state.btcSeries : null;
+      return processCandleBars((d.result && d.result.data) || [], btcMap);
+    });
+  }
+
+  var candleQueueRunning = false;
+  var altQueueRunning = false;
+  var candleFetchTimer = null;
+  function scheduleCandleFetch(){
+    clearTimeout(candleFetchTimer);
+    candleFetchTimer = setTimeout(function(){ runCandleQueue(); runAltCandleQueue(); }, 250);
+  }
+  function runCandleQueue(){
+    if (candleQueueRunning) return;
+    var todo = visibleForCandles.filter(function(symbol){
+      var c = state.candles[symbol];
+      return !c || (c.status !== 'ok' && c.status !== 'pending');
+    });
+    if (!todo.length) return;
+    candleQueueRunning = true;
+    (function next(i){
+      if (i >= todo.length){ candleQueueRunning = false; return; }
+      var symbol = todo[i];
+      state.candles[symbol] = {status:'pending'};
+      fetchCandles(symbol, state.candleTimeframe, true)
+        .then(function(result){ state.candles[symbol] = result; })
+        .catch(function(){ state.candles[symbol] = {status:'error'}; })
+        .then(function(){
+          render();
+          setTimeout(function(){ next(i+1); }, 120);
+        });
+    })(0);
+  }
+  function runAltCandleQueue(){
+    // Fetches the complementary timeframe (Daily when the primary selector is 4H, or vice
+    // versa) purely for the cross-timeframe Trend Agreement check -- lower priority than the
+    // primary queue, so it runs as its own independent, slightly slower-paced loop.
+    if (altQueueRunning) return;
+    var altTf = complementaryTimeframe();
+    var todo = visibleForCandles.filter(function(symbol){
+      var c = state.candlesAlt[symbol];
+      return !c || (c.status !== 'ok' && c.status !== 'pending');
+    });
+    if (!todo.length) return;
+    altQueueRunning = true;
+    (function next(i){
+      if (i >= todo.length){ altQueueRunning = false; return; }
+      var symbol = todo[i];
+      state.candlesAlt[symbol] = {status:'pending'};
+      fetchCandles(symbol, altTf)
+        .then(function(result){ state.candlesAlt[symbol] = result; })
+        .catch(function(){ state.candlesAlt[symbol] = {status:'error'}; })
+        .then(function(){
+          render();
+          setTimeout(function(){ next(i+1); }, 160);
+        });
+    })(0);
+  }
+
+  // ---------- data wiring (direct fetch, no MCP / connector needed) ----------
+  function setStatus(kind, text){
+    var dot = document.getElementById('statusDot');
+    dot.className = 'dot ' + kind;
+    document.getElementById('statusText').textContent = text;
+  }
+  function showBanner(msg, isError){
+    var b = document.getElementById('banner');
+    b.className = 'banner show' + (isError ? ' err' : '');
+    b.innerHTML = msg;
+  }
+  function hideBanner(){
+    document.getElementById('banner').className = 'banner';
+  }
+
+  function loadUniverse(){
+    return fetchJson('https://api.crypto.com/exchange/v1/public/get-instruments').then(function(d){
+      var list = (d.result && d.result.data) || [];
+      var byBase = {};
+      list.forEach(function(inst){
+        var rec = classifyInstrument(inst);
+        if (!rec) return;
+        var existing = byBase[rec.base];
+        if (!existing || (existing.quote === 'USDT' && rec.quote === 'USD')){
+          byBase[rec.base] = rec;
+        }
+      });
+      state.byBase = byBase;
+    });
+  }
+
+  function loadBybitBases(){
+    return fetchJson('https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000').then(function(d){
+      var list = (d.result && d.result.list) || [];
+      var bases = new Set();
+      list.forEach(function(i){
+        if (i.quoteCoin === 'USDT' && i.contractType === 'LinearPerpetual' && i.status === 'Trading'){
+          var s = i.symbol;
+          if (s && s.slice(-4) === 'USDT') bases.add(s.slice(0, -4));
+        }
+      });
+      state.bybitBases = bases;
+    }).catch(function(){ /* Bybit-only filter just won't narrow anything if this fails */ });
+  }
+
+  function fetchTickersOnce(){
+    return fetchJson('https://api.crypto.com/exchange/v1/public/get-tickers').then(function(d){
+      var list = (d.result && d.result.data) || [];
+      var symToBase = {};
+      Object.keys(state.byBase).forEach(function(base){ symToBase[state.byBase[base].symbol] = base; });
+      var tickers = {};
+      list.forEach(function(t){
+        var base = symToBase[t.i];
+        if (!base) return;
+        var price = parseFloat(t.a), mom = parseFloat(t.c) * 100, vol = parseFloat(t.vv);
+        if (isNaN(price)) return;
+        tickers[base] = { price: price, mom: mom, vol: vol };
+      });
+      state.tickers = tickers;
+      state.lastUpdated = Date.now();
+      setStatus('live', 'live');
+      hideBanner();
+      render();
+    }).catch(function(err){
+      setStatus('down', 'disconnected');
+      showBanner('Couldn\'t reach Crypto.com\'s ticker feed (' + (err && err.message || 'network error') + '). Retrying automatically every 30s.', true);
+    });
+  }
+
+  var COINGECKO_PAGES = 4; // 4 x 250 = top 1000 coins by market cap
+  var COINGECKO_PCT_WINDOWS = '1h,24h,7d,14d,30d,200d,1y';
+  function loadMarketCaps(){
+    var promises = [];
+    for (var p = 1; p <= COINGECKO_PAGES; p++){
+      promises.push(
+        fetchJson('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=' + p + '&sparkline=false&price_change_percentage=' + COINGECKO_PCT_WINDOWS)
+          .catch(function(){ return []; })
+      );
+    }
+    return Promise.all(promises).then(function(pages){
+      var caps = {};
+      pages.forEach(function(list){
+        (list || []).forEach(function(coin){
+          var sym = (coin.symbol || '').toUpperCase();
+          if (!sym || caps.hasOwnProperty(sym)) return; // first occurrence = highest market cap (list is market_cap_desc)
+          caps[sym] = {
+            marketCap: coin.market_cap,
+            totalVolume: coin.total_volume,
+            fdv: coin.fully_diluted_valuation,
+            rank: coin.market_cap_rank,
+            high24h: coin.high_24h,
+            low24h: coin.low_24h,
+            athPct: coin.ath_change_percentage,
+            athDate: coin.ath_date,
+            atlPct: coin.atl_change_percentage,
+            mcapChangePct: coin.market_cap_change_percentage_24h,
+            mom7d: coin.price_change_percentage_7d_in_currency,
+            mom14d: coin.price_change_percentage_14d_in_currency,
+            mom30d: coin.price_change_percentage_30d_in_currency,
+            mom200d: coin.price_change_percentage_200d_in_currency,
+            mom1y: coin.price_change_percentage_1y_in_currency
+          };
+        });
+      });
+      state.marketCaps = caps;
+      render();
+    }).catch(function(){ /* market cap is supplementary -- screener still works without it */ });
+  }
+
+  // ---------- regime: is the macro backdrop even long-friendly? ----------
+  function renderRegimeBadge(){
+    var el = document.getElementById('regimeBadge');
+    var textEl = document.getElementById('regimeBadgeText');
+    if (!el || !textEl) return;
+    var cls = state.regime.verdict === 'TRADE' ? 'pos' : (state.regime.verdict === 'STAND DOWN' ? 'neg' : 'flat');
+    var icon = state.regime.verdict === 'TRADE' ? '🟢' : (state.regime.verdict === 'STAND DOWN' ? '🔴' : '🟡');
+    textEl.textContent = icon + ' ' + state.regime.verdict;
+    el.className = 'regime-badge pill ' + cls;
+    el.title = state.regime.reason;
+  }
+
+  function loadRegime(){
+    var btcRec = state.byBase['BTC'];
+    var btcSymbol = btcRec ? btcRec.symbol : 'BTC_USD';
+    return Promise.all([
+      fetchCandles(btcSymbol, '1D').catch(function(){ return {status:'error'}; }),
+      fetchJson('https://api.coingecko.com/api/v3/global').catch(function(){ return null; })
+    ]).then(function(results){
+      var btcCandle = results[0];
+      var global = results[1];
+      var btcTrend = (btcCandle && btcCandle.status === 'ok') ? (btcCandle.trend200 || btcCandle.trend) : null;
+      var btcDDirection = null;
+      var btcMcapChange = state.marketCaps['BTC'] ? state.marketCaps['BTC'].mcapChangePct : null;
+      var totalMcapChange = (global && global.data) ? global.data.market_cap_change_percentage_24h_usd : null;
+      if (btcMcapChange != null && totalMcapChange != null){
+        // If BTC's own market cap grew faster (or shrank less) than the total market's,
+        // BTC is capturing share -- dominance rising, which is a headwind for alt longs.
+        btcDDirection = (btcMcapChange - totalMcapChange) > 0.3 ? 'rising' : ((btcMcapChange - totalMcapChange) < -0.3 ? 'falling' : 'flat');
+      }
+      // Blunt, three-state verdict: is this backdrop even worth taking longs in right now?
+      // STAND DOWN whenever BTC's own 200 EMA trend is down -- fighting the primary trend
+      // is the single biggest way alt longs get run over, regardless of how good any one
+      // coin's setup looks. TRADE only when BTC is up AND not losing share to BTC itself
+      // (dominance rising means capital is leaving alts even while BTC looks fine).
+      var verdict, reason;
+      if (btcTrend === 'down'){
+        verdict = 'STAND DOWN';
+        reason = 'BTC is below its own 200 EMA (downtrend) — most alt longs lose against this backdrop regardless of individual setup quality. Sit out or trade much smaller than usual.';
+      } else if (btcTrend === 'up' && btcDDirection === 'rising'){
+        verdict = 'CAUTION';
+        reason = 'BTC is in an uptrend, but its market cap is growing faster than the total crypto market (dominance rising) — capital is rotating into BTC, not alts. Alt longs are fighting a headwind even on a clean chart.';
+      } else if (btcTrend === 'up'){
+        verdict = 'TRADE';
+        reason = btcDDirection === 'falling'
+          ? 'BTC is in an uptrend and alts are gaining market-cap share (dominance falling) — the most long-friendly backdrop this regime check looks for.'
+          : 'BTC is in an uptrend. Dominance direction is flat/unclear, but the primary trend supports longs.';
+      } else if (btcTrend === 'mixed'){
+        verdict = 'CAUTION';
+        reason = 'BTC\'s own trend is Mixed (neither cleanly above nor below its 200 EMA) — no strong tailwind or headwind either way. Be selective.';
+      } else {
+        verdict = 'CAUTION';
+        reason = 'Not enough data yet to read BTC\'s trend or dominance direction.';
+      }
+      state.regime = { btcTrend: btcTrend, btcDDirection: btcDDirection, verdict: verdict, reason: reason };
+      renderRegimeBadge();
+    });
+  }
+
+  // BTC's own close series at the current candle timeframe, keyed by exact bar timestamp --
+  // every row's candle fetch correlates its returns against this to get a rolling BTC-corr
+  // reading, the same idea as the "BTC corr" field on the Donchian-TF TradingView indicator.
+  function loadBtcSeries(){
+    var btcRec = state.byBase['BTC'];
+    var btcSymbol = btcRec ? btcRec.symbol : 'BTC_USD';
+    var url = 'https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=' + encodeURIComponent(btcSymbol) + '&timeframe=' + encodeURIComponent(state.candleTimeframe) + '&count=' + CANDLE_COUNT;
+    return fetchJson(url).then(function(d){
+      var raw = (d.result && d.result.data) || [];
+      var map = {};
+      raw.forEach(function(b){ map[b.t] = parseFloat(b.c); });
+      state.btcSeries = map;
+    }).catch(function(){ /* BTC-corr just won't populate this cycle */ });
+  }
+
+  var FILE_URL_TIP = 'You opened this as a <code>file://</code> page. When a browser fetches a cross-origin URL from a local file, it sends <code>Origin: null</code> — Crypto.com and Bybit echo that back literally as <code>Access-Control-Allow-Origin: null</code>, which most browsers (Chrome, Firefox, Safari all differ here) refuse to accept as a match, even though the header is technically present. <strong>Fix:</strong> serve the folder over local HTTP instead of double-clicking the file. Open a terminal, <code>cd</code> into the folder holding this file, run <code>python3 -m http.server 8000</code> (Python 3, usually already installed on macOS), then open <code>http://localhost:8000/' + (function(){ try { return location.pathname.split('/').pop() || 'crypto-screener-standalone.html'; } catch(e){ return 'crypto-screener-standalone.html'; } })() + '</code> in your browser instead of the <code>file://</code> link. No installs needed, and you can close the terminal window when you\'re done — just reopen it and re-run that command next time.';
+
+  function boot(){
+    renderMessage('Connecting to live market data…');
+    setStatus('pending', 'connecting…');
+
+    var isFileProtocol = (function(){ try { return window.location.protocol === 'file:'; } catch(e){ return false; } })();
+    if (isFileProtocol){
+      showBanner(FILE_URL_TIP, false);
+    }
+
+    Promise.all([loadUniverse(), loadBybitBases()])
+      .then(function(){
+        if (!Object.keys(state.byBase).length){
+          setStatus('down', 'no data');
+          showBanner((isFileProtocol ? FILE_URL_TIP : 'Crypto.com\'s instrument list came back empty — check your internet connection or try reloading.'), true);
+          renderMessage('No instrument data received.');
+          return;
+        }
+        renderMessage('Instrument list loaded — waiting on live prices…');
+        return fetchTickersOnce();
+      })
+      .then(function(){ return Promise.all([loadRegime(), loadBtcSeries()]); })
+      .catch(function(err){
+        setStatus('down', 'disconnected');
+        showBanner((isFileProtocol ? FILE_URL_TIP : ('Couldn\'t load the crypto universe (' + (err && err.message || 'network error') + '). Try reloading, or open it in a different browser.')), true);
+        renderMessage('Could not reach live data. See the notice above.');
+      });
+
+    loadMarketCaps();
+
+    setInterval(fetchTickersOnce, 30000);
+    setInterval(loadMarketCaps, 300000); // market cap moves slowly -- refresh every 5 min
+    setInterval(loadRegime, 300000); // regime is macro/daily -- doesn't need to be checked often
+    setInterval(loadBtcSeries, 300000);
+  }
+
+  renderHead();
+  setInterval(function(){ document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated); }, 15000);
+  boot();
+
+})();
+</script>
+</body>
+</html>

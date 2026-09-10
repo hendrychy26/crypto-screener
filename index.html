@@ -106,6 +106,18 @@
     background:var(--surface);border:1px solid var(--line);border-radius:10px;
     padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow);
   }
+  .controls-top{display:flex;align-items:center;gap:12px;}
+  .controls-body{display:contents;}
+  .controls-body.collapsed{display:none;}
+  .filters-toggle{
+    all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+    font-size:12px;font-weight:600;color:var(--text-dim);
+    padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);
+  }
+  .filters-toggle:hover{color:var(--text);border-color:var(--text-faint);}
+  .filters-toggle .chevron{font-size:9px;transition:transform 0.15s ease;}
+  .filters-toggle[aria-expanded="false"] .chevron{transform:rotate(-90deg);}
+  @media (prefers-reduced-motion: reduce){ .filters-toggle .chevron{transition:none;} }
   .field{display:flex;flex-direction:column;gap:5px;}
   .field label, .field-caption{
     font-size:10.5px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-faint);font-weight:600;
@@ -250,8 +262,102 @@
   .empty{padding:40px 20px;text-align:center;color:var(--text-faint);}
 
   @media (max-width:760px){
+    .app{padding:14px 12px 48px;}
     .weights{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:12px;width:100%;}
     input[type="text"]{width:100%;}
+    .controls{padding:12px;gap:12px;}
+    .controls-top{width:100%;justify-content:space-between;}
+    .field{width:100%;}
+    .field label, .field-caption{font-size:10px;}
+    .checkbox-field{height:auto;padding:4px 0;}
+    .spacer{display:none;}
+    .saved-flag{display:none;}
+    .mode-tab{flex:1;text-align:center;padding:10px 12px;}
+  }
+
+  /* ---- Full/expert table on mobile: freeze rank+coin so you always know which row you're
+     looking at while scrolling the other ~18 columns sideways. Simple View is excluded (it's
+     the card layout below, never a scrolling table on mobile). ---- */
+  @media (max-width:760px){
+    table#mainTable:not(.simple-mode) td:nth-child(1),
+    table#mainTable:not(.simple-mode) th:nth-child(1){
+      position:sticky; left:0; z-index:2; background:var(--surface);
+    }
+    table#mainTable:not(.simple-mode) td:nth-child(2),
+    table#mainTable:not(.simple-mode) th:nth-child(2){
+      position:sticky; left:34px; z-index:2; background:var(--surface);
+      box-shadow:2px 0 6px rgba(0,0,0,0.35);
+    }
+    table#mainTable:not(.simple-mode) thead th:nth-child(1),
+    table#mainTable:not(.simple-mode) thead th:nth-child(2){
+      z-index:3; background:var(--surface-2);
+    }
+    table#mainTable:not(.simple-mode) tbody tr:hover td:nth-child(1),
+    table#mainTable:not(.simple-mode) tbody tr:hover td:nth-child(2){
+      background:var(--surface-2);
+    }
+    table#mainTable:not(.simple-mode) td:nth-child(2){max-width:100px;}
+    table#mainTable:not(.simple-mode) .sym-cell{gap:5px;}
+    table#mainTable:not(.simple-mode) .chart-ico{display:none;}
+  }
+
+  /* ---- mobile card layout: Simple View only (Full/expert table keeps horizontal scroll) ----
+     Flexbox + `order`, not grid: grid cells can't sit side-by-side unless every item gets its
+     own named track, which breaks the moment a row's item count changes. Flex-wrap lets each
+     row size itself to its content and only breaks where a `flex-basis:100%` item forces it. */
+  @media (max-width:640px){
+    table#mainTable.simple-mode{min-width:0;}
+    table#mainTable.simple-mode thead{display:none;}
+    table#mainTable.simple-mode tbody tr.simple-row{
+      display:flex; flex-wrap:wrap; align-items:baseline;
+      column-gap:10px; row-gap:8px;
+      padding:14px 6px;
+      border-bottom:1px solid var(--line);
+    }
+    table#mainTable.simple-mode tbody tr.simple-row:hover{background:none;}
+    table#mainTable.simple-mode tbody tr.simple-row td{
+      display:inline-flex; align-items:center; padding:0; border:none; white-space:normal;
+    }
+    /* line 1: rank, symbol (flexible), price, hide button */
+    table#mainTable.simple-mode tbody tr.simple-row td.rank{
+      order:1; font-size:11px; color:var(--text-faint);
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(2){
+      order:2; flex:1 1 auto; min-width:0;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(2) .sym{font-size:15.5px;}
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(3){
+      order:3; font-size:14px; font-weight:600;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:last-child{
+      order:4; margin-left:2px;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:last-child .hide-btn{font-size:17px;padding:2px 4px;}
+    /* line 2 (forced by flex-basis:100%): opportunity score -- the hero metric, full width */
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5){
+      order:5; flex:0 0 100%;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5) .score-cell{justify-content:flex-start;}
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5) .score-bar{width:80px;}
+    /* line 3: 24h % (left) and BTC corr (pushed right via auto margin) as small labeled chips */
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(4){
+      order:6; display:inline-flex; align-items:center; gap:5px;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(6){
+      order:7; margin-left:auto; display:inline-flex; align-items:center; gap:5px;
+    }
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(4)::before,
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(6)::before{
+      content:attr(data-label);
+      font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;
+      color:var(--text-faint);font-weight:600;
+    }
+    /* line 4 (forced by flex-basis:100%): why text, full width, never truncated */
+    table#mainTable.simple-mode tbody tr.simple-row td.read-cell{
+      order:8; flex:0 0 100%;
+      max-width:none; overflow:visible; text-overflow:clip; white-space:normal;
+      font-size:12.5px; line-height:1.4;
+    }
   }
 </style>
 </head>
@@ -282,74 +388,81 @@
   </div>
 
   <div class="controls">
-    <div class="field">
-      <span class="field-caption">View</span>
-      <label class="checkbox-field" title="Simple view shows one plain Opportunity score per coin instead of the full technical table. Uncheck for the full expert view with all columns, weight sliders and presets.">
-        <input type="checkbox" id="simpleView" checked>
-        <span>Simple view</span>
-      </label>
-    </div>
-    <div class="field">
-      <label for="search">Search</label>
-      <input type="text" id="search" placeholder="Symbol or word, e.g. SOL or coiled">
-    </div>
-    <div class="field">
-      <label for="pageSize">Show</label>
-      <select id="pageSize">
-        <option value="25">Top 25</option>
-        <option value="50" selected>Top 50</option>
-        <option value="100">Top 100</option>
-      </select>
-    </div>
-    <div class="field">
-      <span class="field-caption">Availability</span>
-      <label class="checkbox-field">
-        <input type="checkbox" id="bybitOnly" checked>
-        <span>Bybit perp only</span>
-      </label>
-      <label class="checkbox-field">
-        <input type="checkbox" id="hideIlliquid" checked>
-        <span>Hide illiquid</span>
-      </label>
-      <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist. Breakout tab: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid. Accumulation tab: deep discount from ATH, near its own low, contracting range, quiet volume, neutral RSI, limited dilution risk, liquid, not still making fresh lows.">
-        <input type="checkbox" id="earlyEntryOnly">
-        <span id="earlyEntryText">Early Entry only (strict)</span>
-      </label>
-    </div>
-    <div id="advancedControls" style="display:contents;">
+    <div class="controls-top">
       <div class="field">
-        <label for="candleTimeframe">Candles</label>
-        <select id="candleTimeframe">
-          <option value="1D">Daily (~300d lookback)</option>
-          <option value="4h" selected>4H (~50d lookback)</option>
+        <span class="field-caption">View</span>
+        <label class="checkbox-field" title="Simple view shows one plain Opportunity score per coin instead of the full technical table. Uncheck for the full expert view with all columns, weight sliders and presets.">
+          <input type="checkbox" id="simpleView" checked>
+          <span>Simple view</span>
+        </label>
+      </div>
+      <button class="filters-toggle" id="filtersToggle" type="button" aria-expanded="true" aria-controls="controlsBody">
+        <span id="filtersToggleLabel">Hide filters</span><span class="chevron">▾</span>
+      </button>
+    </div>
+    <div class="controls-body" id="controlsBody">
+      <div class="field">
+        <label for="search">Search</label>
+        <input type="text" id="search" placeholder="Symbol or word, e.g. SOL or coiled">
+      </div>
+      <div class="field">
+        <label for="pageSize">Show</label>
+        <select id="pageSize">
+          <option value="25">Top 25</option>
+          <option value="50" selected>Top 50</option>
+          <option value="100">Top 100</option>
         </select>
       </div>
       <div class="field">
-        <label for="trendFilter">Trend</label>
-        <select id="trendFilter">
-          <option value="all" selected>All</option>
-          <option value="up">Up only</option>
-          <option value="down">Down only</option>
-          <option value="updown">Up or Down (no Mixed)</option>
-        </select>
+        <span class="field-caption">Availability</span>
+        <label class="checkbox-field">
+          <input type="checkbox" id="bybitOnly" checked>
+          <span>Bybit perp only</span>
+        </label>
+        <label class="checkbox-field">
+          <input type="checkbox" id="hideIlliquid" checked>
+          <span>Hide illiquid</span>
+        </label>
+        <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist. Breakout tab: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid. Accumulation tab: deep discount from ATH, near its own low, contracting range, quiet volume, neutral RSI, limited dilution risk, liquid, not still making fresh lows.">
+          <input type="checkbox" id="earlyEntryOnly">
+          <span id="earlyEntryText">Early Entry only (strict)</span>
+        </label>
+      </div>
+      <div id="advancedControls" style="display:contents;">
+        <div class="field">
+          <label for="candleTimeframe">Candles</label>
+          <select id="candleTimeframe">
+            <option value="1D">Daily (~300d lookback)</option>
+            <option value="4h" selected>4H (~50d lookback)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="trendFilter">Trend</label>
+          <select id="trendFilter">
+            <option value="all" selected>All</option>
+            <option value="up">Up only</option>
+            <option value="down">Down only</option>
+            <option value="updown">Up or Down (no Mixed)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="presetSelect">Preset</label>
+          <select id="presetSelect"></select>
+        </div>
+
+        <div class="weights" id="weights"></div>
       </div>
 
-      <div class="field">
-        <label for="presetSelect">Preset</label>
-        <select id="presetSelect"></select>
-      </div>
-
-      <div class="weights" id="weights"></div>
+      <div class="spacer"></div>
+      <span class="saved-flag" id="savedFlag">Saved</span>
+      <button class="hidden-link" id="resetConfig">Reset weights</button>
+      <button class="hidden-link" id="hiddenToggle" style="display:none;"></button>
     </div>
-
-    <div class="spacer"></div>
-    <span class="saved-flag" id="savedFlag">Saved</span>
-    <button class="hidden-link" id="resetConfig">Reset weights</button>
-    <button class="hidden-link" id="hiddenToggle" style="display:none;"></button>
   </div>
 
   <div class="table-wrap">
-    <table>
+    <table id="mainTable">
       <thead>
         <tr id="headRow"></tr>
       </thead>
@@ -1004,6 +1117,8 @@
   var footNote = document.getElementById('footNote');
 
   function renderHead(){
+    var mainTable = document.getElementById('mainTable');
+    if (mainTable) mainTable.classList.toggle('simple-mode', state.simpleView);
     headRow.innerHTML = '';
     currentColumns().forEach(function(col){
       var th = document.createElement('th');
@@ -1093,13 +1208,17 @@
       tr.appendChild(tdPrice);
 
       if (state.simpleView){
+        tr.className = 'simple-row';
+
         var tdMomS = document.createElement('td');
         tdMomS.className = 'num-col';
+        tdMomS.setAttribute('data-label', '24h');
         tdMomS.innerHTML = '<span class="pill '+pctClass(r.mom)+'">'+fmtPct(r.mom)+'</span>';
         tr.appendChild(tdMomS);
 
         var tdOpp = document.createElement('td');
         tdOpp.className = 'num-col';
+        tdOpp.setAttribute('data-label', 'Opportunity');
         if (r.simpleOpportunityScore == null){
           tdOpp.innerHTML = '<span class="spin" title="Checking setup…"></span>';
         } else {
@@ -1114,6 +1233,7 @@
 
         var tdCorrS = document.createElement('td');
         tdCorrS.className = 'num-col';
+        tdCorrS.setAttribute('data-label', 'BTC Corr');
         tdCorrS.innerHTML = btcCorrCellHtml(r);
         tr.appendChild(tdCorrS);
 
@@ -1473,6 +1593,30 @@
     }
   }
   applyViewVisibility();
+
+  // ---------- collapsible filters panel (mobile: collapsed by default so the coin list is
+  // reachable without scrolling past search/availability/candles/trend/preset/weights first;
+  // desktop: expanded by default since there's room. Manual toggle always wins after that.) ----
+  (function setupFiltersToggle(){
+    var toggleBtn = document.getElementById('filtersToggle');
+    var body = document.getElementById('controlsBody');
+    var label = document.getElementById('filtersToggleLabel');
+    function apply(collapsed){
+      body.classList.toggle('collapsed', collapsed);
+      toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+      label.textContent = collapsed ? 'Show filters' : 'Hide filters';
+    }
+    var saved = null;
+    try { saved = localStorage.getItem('screener_filters_collapsed_sa'); } catch(e){}
+    var collapsed = saved !== null ? (saved === '1') : (window.innerWidth <= 760);
+    apply(collapsed);
+    toggleBtn.addEventListener('click', function(){
+      collapsed = !collapsed;
+      apply(collapsed);
+      try { localStorage.setItem('screener_filters_collapsed_sa', collapsed ? '1' : '0'); } catch(e){}
+    });
+  })();
+
   document.getElementById('simpleView').addEventListener('change', function(e){
     state.simpleView = e.target.checked;
     applyViewVisibility();

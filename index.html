@@ -432,8 +432,8 @@
         <div class="field">
           <label for="candleTimeframe">Candles</label>
           <select id="candleTimeframe">
-            <option value="1D">Daily (~300d lookback)</option>
-            <option value="4h" selected>4H (~50d lookback)</option>
+            <option value="1D" selected>Daily (~300d lookback)</option>
+            <option value="4h">4H (~50d lookback)</option>
           </select>
         </div>
         <div class="field">
@@ -650,7 +650,7 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '4h', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, simpleView: true
+    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, simpleView: true
   };
   var savedConfig = loadConfig();
   var state = {

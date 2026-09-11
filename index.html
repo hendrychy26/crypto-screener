@@ -2746,16 +2746,22 @@
         // did include it and produced "dominance falling" at the exact moment BTC was
         // outrunning the market by 2.4 points. Comparing BTC against the REST of the market is
         // both correct here and closer to the question actually being asked.
-        var wSum = 0, wTot = 0;
+        var wSum = 0, wTot = 0, contributors = 0;
         Object.keys(state.marketCaps).forEach(function(k){
           if (k === 'BTC') return;
           var m = state.marketCaps[k];
           if (m && m.marketCap > 0 && m.mcapChangePct != null){
             wSum += m.marketCap * m.mcapChangePct;
             wTot += m.marketCap;
+            contributors++;
           }
         });
-        if (wTot > 0) totalMcapChange = wSum / wTot;
+        // Require a real sample. A partial market-cap load (rate-limited pages) yields a
+        // weighted average over a handful of coins, which is noise wearing the costume of a
+        // measurement -- and it silently drove a "dominance falling / TRADE" verdict at a moment
+        // when BTC was measurably outrunning the market. Too few contributors means unmeasurable,
+        // which lands on CAUTION, rather than a confident wrong answer.
+        if (wTot > 0 && contributors >= 100) totalMcapChange = wSum / wTot;
       }
       if (btcMcapChange != null && totalMcapChange != null){
         // If BTC's own market cap grew faster (or shrank less) than the total market's,

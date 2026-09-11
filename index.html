@@ -2734,6 +2734,22 @@
       var btcMcapChange = btcDirect ? btcDirect.market_cap_change_percentage_24h
         : (state.marketCaps['BTC'] ? state.marketCaps['BTC'].mcapChangePct : null);
       var totalMcapChange = (global && global.data) ? global.data.market_cap_change_percentage_24h_usd : null;
+      if (totalMcapChange == null){
+        // /global is a single point of failure for the whole regime and it rate-limits
+        // independently of the other endpoints (a 429 arrives without CORS headers, so the
+        // browser reports it as a plain network failure). Reconstruct the market's aggregate
+        // move from the top-250 data already loaded: cap-weighted, which is what the total
+        // market cap change effectively measures.
+        var wSum = 0, wTot = 0;
+        Object.keys(state.marketCaps).forEach(function(k){
+          var m = state.marketCaps[k];
+          if (m && m.marketCap > 0 && m.mcapChangePct != null){
+            wSum += m.marketCap * m.mcapChangePct;
+            wTot += m.marketCap;
+          }
+        });
+        if (wTot > 0) totalMcapChange = wSum / wTot;
+      }
       if (btcMcapChange != null && totalMcapChange != null){
         // If BTC's own market cap grew faster (or shrank less) than the total market's,
         // BTC is capturing share -- dominance rising, which is a headwind for alt longs.

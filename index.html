@@ -562,7 +562,7 @@
         <li><strong>Up to 300 bars of history</strong> for the technicals that still need real candles (RSI, Donchian channel width/position, Range Contraction, TF Agree, the 20-period and 200-period Trend filters) — Crypto.com's raw REST candlestick endpoint returns up to 300 bars per request. At <strong>4H</strong> that's ~50 days; at <strong>Daily</strong> that's ~300 days. Whichever one you pick, TF Agree always fetches the other for the cross-check.</li>
         <li><strong>Trend(200)</strong> (Breakout tab) is a genuine 200-period EMA trend filter — price above a rising 200 EMA is Up, below a falling one is Down. The simpler 20-period <span class="num">Trend</span> column (used everywhere, and as this signal's fallback when a coin has under ~210 bars of history) is unchanged.</li>
         <li><strong>Universe is spot USD/USDT pairs only</strong>, classified directly from Crypto.com's instrument list (<span class="num">inst_type: CCY_PAIR</span>), filtered to exclude tokenized-stock, ETF, commodity and stablecoin listings using a manual blocklist. Click the <span class="num">×</span> next to any row that doesn't belong to hide it permanently on this device.</li>
-        <li><strong>Bybit perp availability</strong> is checked live against Bybit's instrument list on load (not a stale snapshot), so every clickable chart link should resolve.</li>
+        <li><strong>Bybit perp availability</strong> is checked live against Bybit's ticker list on load, and <strong>verified by price</strong>, not just by ticker. Matching on ticker alone is genuinely dangerous: Crypto.com's <span class="num">ADI</span> trades around $8.76 while Bybit's <span class="num">ADIUSDT.P</span> is an unrelated asset near $380 — 43x apart. Left unchecked, the technicals get computed from one asset while the chart link sends you to another, which looks exactly like a working screener right up until you trade it. A perp now only counts as the same coin if the two venues agree on price within 25% (real spot-vs-perp basis is under a couple of percent, so this only catches genuine collisions); mismatches are dropped from the <span class="num">Bybit perp only</span> filter. Currently affects ADI and EDGE.</li>
         <li><strong>Composite score</strong> ranks each coin 0–100 on each metric relative to the current filtered set, then blends those ranks using the sliders above — it updates instantly as you drag, no refetch needed. Market Cap and Market Cap Rank are shown for reference only and never enter a composite score.</li>
         <li><strong>Your weights, page size and sort are saved automatically</strong> to this browser (localStorage — private to this device) and reload next time you open this file. Hidden rows persist the same way. Use <span class="num">Reset weights</span> to go back to the defaults.</li>
         <li><strong>Preset</strong> dropdown gives one-click weight combinations per mode — e.g. Breakout's <span class="num">New ATH Momentum</span> leans hard on ATH proximity plus 7d confirmation, while <span class="num">Fresh Move (early)</span> leans on 24h momentum and Vol/MCap conviction to catch a move before 7d catches up. Dragging any slider by hand switches it to <span class="num">Custom</span> automatically.</li>
@@ -743,6 +743,9 @@
     simpleView: savedConfig.simpleView,
     hidden: loadHidden(),
     bybitBases: new Set(),
+    bybitPrices: {},        // base -> Bybit perp last price, for the collision check
+    bybitMismatched: [],    // tickers whose two venues disagree on price -- different assets
+
     lastUpdated: null,
     regime: { btcTrend: null, btcDDirection: null, verdict: null, reason: 'Reading regime…' },
     btcSeries: null // {timestamp: close} for the current candleTimeframe, used for BTC-correlation
@@ -2587,18 +2590,49 @@
     });
   }
 
+  // Ticker collisions are real and dangerous: Crypto.com's ADI trades at $8.76 while Bybit's
+  // ADIUSDT.P is a different asset at $380 -- 43x apart. Matching on ticker alone meant the
+  // technicals were computed from one asset while the chart link pointed at another, which is a
+  // way to lose money that looks exactly like a working screener. So a Bybit perp only counts as
+  // "the same coin" if its price agrees with Crypto.com's. Genuine spot-vs-perp basis is under a
+  // couple of percent; 25% is far beyond any of that and still tolerates a stale quote.
+  var COLLISION_RATIO = 1.25;
   function loadBybitBases(){
-    return fetchJson('https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000').then(function(d){
+    // /tickers carries lastPrice AND the full perp list, so this is the same one request.
+    return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
       var list = (d.result && d.result.list) || [];
-      var bases = new Set();
+      var prices = {};
       list.forEach(function(i){
-        if (i.quoteCoin === 'USDT' && i.contractType === 'LinearPerpetual' && i.status === 'Trading'){
-          var s = i.symbol;
-          if (s && s.slice(-4) === 'USDT') bases.add(s.slice(0, -4));
+        var s = i.symbol;
+        if (s && s.slice(-4) === 'USDT'){
+          var px = parseFloat(i.lastPrice);
+          if (isFinite(px) && px > 0) prices[s.slice(0, -4)] = px;
         }
       });
-      state.bybitBases = bases;
+      state.bybitPrices = prices;
+      applyBybitBases();
     }).catch(function(){ /* Bybit-only filter just won't narrow anything if this fails */ });
+  }
+
+  // Recomputed whenever either side's prices change, since Crypto.com tickers refresh every 30s
+  // and may arrive after the Bybit list.
+  function applyBybitBases(){
+    var prices = state.bybitPrices || {};
+    var bases = new Set();
+    var mismatched = [];
+    Object.keys(prices).forEach(function(base){
+      var t = state.tickers[base];
+      var spot = t && t.price;
+      if (spot == null || !isFinite(spot) || spot <= 0){
+        bases.add(base);   // nothing to compare against yet -- don't punish it
+        return;
+      }
+      var ratio = Math.max(spot, prices[base]) / Math.min(spot, prices[base]);
+      if (ratio > COLLISION_RATIO) mismatched.push(base + ' (' + Math.round(ratio) + 'x)');
+      else bases.add(base);
+    });
+    state.bybitBases = bases;
+    state.bybitMismatched = mismatched;
   }
 
   function fetchTickersOnce(){
@@ -2616,6 +2650,8 @@
       });
       state.tickers = tickers;
       state.lastUpdated = Date.now();
+      // Re-verify the cross-venue price agreement now that spot prices moved.
+      applyBybitBases();
       setStatus('live', 'live');
       hideBanner();
       render();

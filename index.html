@@ -2716,15 +2716,23 @@
   function loadRegime(){
     var btcRec = state.byBase['BTC'];
     var btcSymbol = btcRec ? btcRec.symbol : 'BTC_USD';
+    // BTC's own market-cap change is fetched directly rather than read out of state.marketCaps.
+    // That shared object is filled by a separate paginated load, and loadRegime reads it inside
+    // its own .then() -- so whichever chain resolved last won, and the stale "dominance
+    // unmeasurable" reading regularly overwrote a good one. Ordering tweaks cannot reliably win
+    // a race; removing the dependency can. One tiny extra request every 5 minutes.
     return Promise.all([
       fetchCandles(btcSymbol, '1D').catch(function(){ return {status:'error'}; }),
-      fetchJson('https://api.coingecko.com/api/v3/global').catch(function(){ return null; })
+      fetchJson('https://api.coingecko.com/api/v3/global').catch(function(){ return null; }),
+      fetchJson('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin').catch(function(){ return null; })
     ]).then(function(results){
       var btcCandle = results[0];
       var global = results[1];
+      var btcDirect = (Array.isArray(results[2]) && results[2][0]) ? results[2][0] : null;
       var btcTrend = (btcCandle && btcCandle.status === 'ok') ? (btcCandle.trend200 || btcCandle.trend) : null;
       var btcDDirection = null;
-      var btcMcapChange = state.marketCaps['BTC'] ? state.marketCaps['BTC'].mcapChangePct : null;
+      var btcMcapChange = btcDirect ? btcDirect.market_cap_change_percentage_24h
+        : (state.marketCaps['BTC'] ? state.marketCaps['BTC'].mcapChangePct : null);
       var totalMcapChange = (global && global.data) ? global.data.market_cap_change_percentage_24h_usd : null;
       if (btcMcapChange != null && totalMcapChange != null){
         // If BTC's own market cap grew faster (or shrank less) than the total market's,

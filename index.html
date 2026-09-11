@@ -502,8 +502,16 @@
   <details class="notes">
     <summary>About this data</summary>
     <div class="body">
-      <p style="margin:8px 0 0;">This is a <strong>standalone HTML file</strong> (not hosted on claude.ai) so it can call public APIs directly from your browser: <strong>Crypto.com</strong> and <strong>Bybit</strong> for live tradable price/perp data, and <strong>CoinGecko</strong> for the fundamentals-grade fields (market cap, ATH/ATL, dilution, multi-timeframe momentum) that make entry analysis possible. Nothing here needs a server, an API key, or a Claude connector — open the file and it just runs.</p>
+      <p style="margin:8px 0 0;">This is a <strong>single self-contained HTML file</strong>, deployed at <span class="num">hendrychy26.github.io/crypto-screener</span> and equally runnable by opening the file locally. Either way it calls public APIs directly from your browser: <strong>Crypto.com</strong> and <strong>Bybit</strong> for live tradable price/perp data, and <strong>CoinGecko</strong> for the fundamentals-grade fields (market cap, ATH/ATL, dilution, multi-timeframe momentum) that make entry analysis possible. Nothing here needs a server, an API key, or a Claude connector — open the file and it just runs.</p>
       <ul>
+        <li><strong>Verdict</strong> (Simple view) is the one thing to read, and it works identically on both tabs. Everything else in this file exists to produce it. Four states:
+          <ul>
+            <li><span class="num">🟢 Ready</span> — passed every check; the <strong>What to do</strong> column gives the level to hold or the action to take.</li>
+            <li><span class="num">🟡 Watch</span> — the structure is there but one check still fails, and it names which one (e.g. <em>waiting on: regime CAUTION</em>).</li>
+            <li><span class="num">⚪ Not yet</span> — no setup or no base formed.</li>
+            <li><span class="num">🔴 Avoid</span> — failed breakout, downtrend, or barely trades.</li>
+          </ul>
+          Rows sort by verdict, so Ready floats to the top with nothing to configure. On <strong>Breakout</strong> a Ready means the full Tradeable checklist passed; on <strong>Accumulation</strong> it means a valid base that is liquid, not a BTC proxy, with a sane stop — deliberately <em>not</em> requiring regime = TRADE, because accumulating a quiet base during 🟡 CAUTION is the point of that tab. Only 🔴 STAND DOWN blocks it, since building alt positions while BTC breaks down is how you catch a falling knife. Uncheck <strong>Simple view</strong> for the full expert table behind it.</li>
         <li><strong>Every mode was rebuilt around CoinGecko's richer per-coin data</strong> so the columns answer entry questions directly, instead of proxying them from 50-300 candle bars: <em>is this move confirmed or a wick</em> (7d momentum alongside 24h), <em>is it extended or fresh</em> (real distance from all-time-high, not a 50-bar proxy), <em>is today's push starting or already exhausted</em> (24h range position), and <em>is there a dilution trap waiting</em> (FDV/market-cap ratio). A useful side effect: Breakout mode's score no longer waits on a candle fetch to populate — Score, Read, and most columns are ready the instant tickers load; only Trend, Trend(200), TF Agree, Donch(20) Dist. and Setup still need a moment.</li>
         <li><strong>Regime badge</strong> (top right) answers one blunt question before you look at a single coin: <em>is this backdrop even worth taking longs in?</em> It reads BTC's own 200 EMA trend plus whether BTC dominance is rising or falling (approximated by comparing BTC's 24h market-cap change against the total crypto market's 24h change, via CoinGecko's <span class="num">/global</span> endpoint), and collapses that into three states — <span class="pill neg" style="font-size:11px;">🔴 STAND DOWN</span> when BTC itself is in a downtrend (most alt longs lose here regardless of setup quality), <span class="pill flat" style="font-size:11px;">🟡 CAUTION</span> when BTC is up but capital is rotating into BTC rather than alts (dominance rising) or the trend is genuinely unclear, and <span class="pill pos" style="font-size:11px;">🟢 TRADE</span> when BTC is up and not starving alts of capital. Hover it for the full reasoning. It doesn't filter or score any row automatically — it's a check to run before trusting a green score, the same way a discretionary trader checks BTC before sizing into an alt.</li>
         <li><strong>TF Agree</strong> compares the primary <span class="num">Candles</span> timeframe's trend against the complementary one (Daily when you're on 4H, or 4H when you're on Daily) — a fresh 4H uptrend that the Daily still disagrees with (⚠) is a much weaker case than one both timeframes confirm (✓). This is exactly the "don't take a 4H long fighting the daily trend" check a discretionary trader runs by eye on two chart tabs; here it's automatic on every row.</li>
@@ -517,12 +525,14 @@
             <li><span class="num">—</span> — no breakout detected in the lookback window at all.</li>
           </ul>
           Every badge shows the actual watch level right in the cell — <span class="num">hold &gt; $X (+Y%)</span> for Fresh/Confirming/Extended, or <span class="num">reclaim &gt; $X (−Y%)</span> for Failed — X is the fixed trigger price from when that breakout was detected, Y is your live distance to it; hover for the fuller explanation. Also folded into Read/Why and searchable, e.g. <span class="num">confirming breakout</span> or <span class="num">extended</span>.</li>
+        <li><strong>🔔 Alert on ✅ Confirming</strong> notifies you when a coin <em>enters</em> the confirming phase, as an in-page strip plus a browser notification (permission is requested only when you tick the box). Confirming rather than Fresh on purpose: a single close above a level fails often — in a live scan of ~400 coins, failed breakouts outnumbered confirming ones roughly nine to one — while confirming means it survived a retest. One alert per coin, remembered in localStorage so reloading doesn't re-announce everything; the memo clears if a coin leaves the phase, so a genuine re-entry alerts again. Coins that turn confirming while alerts are off are memoized silently, so switching alerts on never dumps a backlog. Because it needs the tab open, there is also a cloud version that runs daily just after the 00:00 UTC candle close and pushes to Telegram — that one works with the laptop shut.</li>
         <li><strong>Tradeable</strong> (Breakout tab) is the highest bar in this screener and the one to act on. <strong>Setup only describes a shape; Tradeable asks whether that shape is worth risking money on today.</strong> It requires all of:
           <ul>
             <li><strong>Structure</strong> — either a valid coil (<span class="num">✓ Coiled</span>) or a live breakout still in <span class="num">🆕 Fresh</span> / <span class="num">✅ Confirming</span>. Failed and Extended breakouts are rejected.</li>
             <li><strong>Regime = 🟢 TRADE</strong> — a hard gate here, not the soft discount the Opportunity score applies. No longs screened during 🟡 CAUTION or 🔴 STAND DOWN.</li>
             <li><strong>Trend genuinely up</strong> (not merely "not down") and <strong>timeframes agreeing</strong> (✓, not just the absence of ⚠).</li>
-            <li><strong>A stop you can size around</strong> — 1.5x ATR(14) structural stop must sit within 8% of price. A perfect pattern whose invalidation is 25% away is not a trade.</li>
+            <li><strong>A stop you can size around</strong> — a 1.5x ATR(14) structural stop within 12% of price. (Originally 8%, which was calibrated off majors: on Daily crypto alts ATR alone is routinely 5-8%, so 1.5x ATR lands at 10-12% and the tighter bound rejected essentially every alt regardless of how good its reward:risk was.) Risk % is always shown so you can size down accordingly.</li>
+            <li><strong>Not already chasing</strong> — no more than 15% above the trigger. A coin can be "confirming" by bar count while price has already run far past the level; bar count says early, price says the entry is gone.</li>
             <li><strong>R:R ≥ 2</strong> — measured move (the Donchian range height projected from the breakout) divided by that risk.</li>
             <li><strong>Participation appropriate to its phase</strong> — volume <em>drying up</em> (≤1.2x) while still coiling, or <em>expanding</em> (≥1.3x) once triggered. These are deliberately opposite tests: a coil on rising volume is churn, and a breakout on flat volume is the textbook failure.</li>
             <li><strong>Real liquidity</strong> — $5M+ 24h volume and $20M+ market cap, so the spread doesn't eat the move.</li>
@@ -531,7 +541,7 @@
           Passing rows show <span class="num">✅ R:R 2.4</span> with the risk % beneath. Rows that fail show <span class="num">—</span>; <strong>hover it to see exactly which checks blocked it</strong>, which is usually more informative than the pass itself. Note the volume test reads the last <em>completed</em> bar, never the still-forming current one — an early-in-the-day Daily bar always looks artificially quiet.</li>
         <li><strong>Setup</strong> (Breakout tab) is a strict, all-or-nothing pre-breakout checklist, shown as <span class="num">✓ Coiled</span> when every one of these holds: Donchian(20) width ≤10% (tight range), price sitting in the upper half of that range without having already broken out (55-97% channel position), RSI(14) 42-66 (healthy, not overbought or dying), 24h move ≤8% (hasn't already popped), trend not down, no TF Agree conflict, FDV/MCap ≤1.6x (limited dilution risk), and not flagged illiquid.</li>
         <li>The <strong>"Early Entry only (strict)"</strong> checkbox (relabels itself <strong>"Valid Base only (strict)"</strong> on the Accumulation tab) hides everything that doesn't pass the checklist for whichever tab you're on — Breakout's pre-breakout coil checklist above, or Accumulation's own: ATH drawdown ≤-60% (a real discount, not a dip), within 20% of its own recent low, contracting range (volatility ratio ≤1.0x), quiet volume (Vol/MCap ≤5%), neutral RSI 35-60, limited dilution risk, liquid, and not still making fresh lows. These are deliberately different checklists for different jobs — a small, high-confidence shortlist rather than a soft ranking, because the point of either screen is precision over coverage. A coin still loading its candles is kept visible rather than hidden, the same way the Trend filter works, so the page has something to resolve.</li>
-        <li><strong>Opportunity</strong> (Simple view) is a single 0-100 score that folds the checklist above into one number instead of a dozen columns, so you don't need the full expert table to get a read. It's <strong>mode-aware</strong> — Breakout and Accumulation compute genuinely different numbers from different inputs (coiled-near-highs vs. deep-and-quiet-base), so switching tabs changes the ranking, not just the label — and both are discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE).
+        <li><strong>Opportunity</strong> is a single 0-100 score folding the checklist above into one number. It drove the old Simple view; that role now belongs to <strong>Verdict</strong>, and this survives as a ranking aid in the expert table. It's <strong>mode-aware</strong> — Breakout and Accumulation compute genuinely different numbers from different inputs (coiled-near-highs vs. deep-and-quiet-base), so switching tabs changes the ranking, not just the label — and both are discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE).
           <ul>
             <li><span class="num">🟢 Strong Setup</span> / <span class="num">🟢 Strong Base</span> — 75+. High-confidence read; still confirm with the Setup/Valid Base checklist before acting.</li>
             <li><span class="num">🟡 Building</span> / <span class="num">🟡 Basing</span> — 50-74. Developing, not there yet — worth watching, not yet a trigger.</li>
@@ -962,13 +972,22 @@
   // can actually size around, reward that justifies that stop, real participation, real liquidity,
   // and enough independence from BTC that it's a position rather than a BTC proxy.
   var TRADEABLE = {
-    maxRiskPct:     8,      // structural stop within 8% -- beyond this, sizing/slippage kill the edge
+    // 12%, not 8%: 1.5x ATR(14) on a Daily crypto ALT is routinely 10-12% (ATR alone is often
+    // 5-8%). An 8% bound was calibrated off majors and rejected essentially every alt regardless
+    // of how good its reward:risk was -- a live scan found 13 confirming coins and threw out all
+    // 13 on stop width alone. R:R is the real gate; this only trims the untradeable tail.
+    maxRiskPct:     12,
     minRR:          2,      // measured move (range height) must be >= 2x the risk taken
     minVolDryUp:    1.2,    // still coiling: last completed bar <= 1.2x avg -- quiet coil, not churn
     minVolExpand:   1.3,    // already triggered: last completed bar >= 1.3x avg -- real participation
     minDollarVol:   5e6,    // $5M/24h floor -- below this the spread eats a breakout move
     minMarketCap:   20e6,   // $20M floor -- micro caps distort every technical read
-    maxBtcCorr:     0.85    // above this it's leveraged BTC, not an independent trade
+    maxBtcCorr:     0.85,   // above this it's leveraged BTC, not an independent trade
+    // A coin can be "confirming" by bar count while price has already run far past the trigger
+    // (VVV: +42.6% above its level on bar 3). Bar count says early, price says the entry is gone,
+    // and R:R does not catch it because that compares range height to the stop, not distance
+    // already travelled.
+    maxAbovePct:    15
   };
   function evaluateTradeable(r, effTrend){
     if (r.distStatus !== 'ok') return {ok:null, reasons:[]};
@@ -981,6 +1000,9 @@
     if (!structureOk) why.push('no valid coil or live breakout');
     if (bs && bs.phase === 'failed') why.push('last breakout failed');
     if (bs && bs.phase === 'extended') why.push('breakout already extended');
+    if (bs && bs.pctFromTrigger != null && bs.pctFromTrigger > TRADEABLE.maxAbovePct){
+      why.push('already +' + bs.pctFromTrigger.toFixed(0) + '% past trigger');
+    }
 
     // --- Macro: the regime badge is a hard gate here, not a score discount ---
     if (state.regime.verdict !== 'TRADE') why.push('regime ' + (state.regime.verdict || 'unresolved'));

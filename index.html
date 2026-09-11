@@ -106,7 +106,9 @@
     background:var(--surface);border:1px solid var(--line);border-radius:10px;
     padding:14px 16px;margin-bottom:14px;box-shadow:var(--shadow);
   }
-  .controls-top{display:flex;align-items:center;gap:12px;}
+  .controls-top{display:flex;flex-direction:column;gap:10px;}
+  .controls-top-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .controls-top .search-field input{width:100%;}
   .controls-body{display:contents;}
   .controls-body.collapsed{display:none;}
   .filters-toggle{
@@ -266,8 +268,13 @@
     .weights{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:12px;width:100%;}
     input[type="text"]{width:100%;}
     .controls{padding:12px;gap:12px;}
-    .controls-top{width:100%;justify-content:space-between;}
+    .controls-top{width:100%;}
+    .controls-top-row{width:100%;}
     .field{width:100%;}
+    /* View stays compact next to the toggle button (not full-width like the collapsible body's
+       fields) so they can share a line; Search is deliberately still full-width, above both. */
+    .controls-top-row .field{width:auto;}
+    .controls-top .search-field{width:100%;}
     .field label, .field-caption{font-size:10px;}
     .checkbox-field{height:auto;padding:4px 0;}
     .spacer{display:none;}
@@ -389,22 +396,24 @@
 
   <div class="controls">
     <div class="controls-top">
-      <div class="field">
-        <span class="field-caption">View</span>
-        <label class="checkbox-field" title="Simple view shows one plain Opportunity score per coin instead of the full technical table. Uncheck for the full expert view with all columns, weight sliders and presets.">
-          <input type="checkbox" id="simpleView" checked>
-          <span>Simple view</span>
-        </label>
-      </div>
-      <button class="filters-toggle" id="filtersToggle" type="button" aria-expanded="true" aria-controls="controlsBody">
-        <span id="filtersToggleLabel">Hide filters</span><span class="chevron">▾</span>
-      </button>
-    </div>
-    <div class="controls-body" id="controlsBody">
-      <div class="field">
+      <div class="field search-field">
         <label for="search">Search</label>
         <input type="text" id="search" placeholder="Symbol or word, e.g. SOL or coiled">
       </div>
+      <div class="controls-top-row">
+        <div class="field">
+          <span class="field-caption">View</span>
+          <label class="checkbox-field" title="Simple view shows one plain Opportunity score per coin instead of the full technical table. Uncheck for the full expert view with all columns, weight sliders and presets.">
+            <input type="checkbox" id="simpleView" checked>
+            <span>Simple view</span>
+          </label>
+        </div>
+        <button class="filters-toggle" id="filtersToggle" type="button" aria-expanded="true" aria-controls="controlsBody">
+          <span id="filtersToggleLabel">Hide filters</span><span class="chevron">▾</span>
+        </button>
+      </div>
+    </div>
+    <div class="controls-body" id="controlsBody">
       <div class="field">
         <label for="pageSize">Show</label>
         <select id="pageSize">

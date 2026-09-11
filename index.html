@@ -422,6 +422,11 @@
     </div>
     <div class="controls-body" id="controlsBody">
       <div class="field">
+        <label for="cgKey">CoinGecko key <span style="text-transform:none;letter-spacing:normal;font-weight:400;">(optional)</span></label>
+        <input type="password" id="cgKey" placeholder="CG-… lifts the rate limit" autocomplete="off" spellcheck="false">
+        <span id="cgKeyNote" style="font-size:10.5px;color:var(--text-faint);"></span>
+      </div>
+      <div class="field">
         <label for="pageSize">Show</label>
         <select id="pageSize">
           <option value="25">Top 25</option>
@@ -570,7 +575,8 @@
         <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
         <li><strong>"Hide illiquid"</strong> drops any coin where 3+ of its last 10 candles had zero trades — thin, barely-traded coins produce stale closes that distort every technical column, Trend especially.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
-        <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all public, unauthenticated, read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
+        <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
+        <li><strong>CoinGecko key</strong> (optional, in the filters panel) removes the main source of flakiness in this tool. Without one you share a public IP allowance of roughly 5-15 calls a minute, which a full scan trips constantly — and CoinGecko returns those 429s <em>without CORS headers</em>, so the browser reports them as generic network failures rather than rate limits. That is why market caps sometimes come back blank and the regime reads "unmeasurable". A free demo key from CoinGecko's developer dashboard gives you your own allowance and makes the tool markedly more reliable. <strong>It is stored only in this browser's localStorage and never written into the page</strong>, which matters because this file is served from a public repository — a key committed here would be readable by anyone and your quota would be theirs to spend.</li>
       </ul>
     </div>
   </details>
@@ -1894,6 +1900,24 @@
       try { Notification.requestPermission(); } catch(err){}
     }
   });
+  (function setupCgKey(){
+    var input = document.getElementById('cgKey');
+    var note = document.getElementById('cgKeyNote');
+    function paint(){
+      var k = getCgKey();
+      note.textContent = k ? ('in use · ends …' + k.slice(-4)) : 'using the shared public limit';
+      note.style.color = k ? 'var(--positive)' : 'var(--text-faint)';
+    }
+    input.value = getCgKey();
+    paint();
+    input.addEventListener('change', function(e){
+      setCgKey(e.target.value);
+      paint();
+      // Re-pull everything CoinGecko-derived with the new key rather than waiting 5 minutes.
+      loadMarketCaps().then(function(){ return loadRegime(); }).then(render).catch(function(){});
+    });
+  })();
+
   document.getElementById('allowCaution').checked = state.allowCaution;
   document.getElementById('allowCaution').addEventListener('change', function(e){
     state.allowCaution = e.target.checked;
@@ -2265,6 +2289,27 @@
   function narrateRow(r){
     if (state.mode === 'accumulation') return narrateAccumulation(r);
     return narrateBreakout(r);
+  }
+
+  // ---------- CoinGecko API key (optional) ----------
+  // Kept in localStorage and NEVER in the file, because this page is served from a public repo:
+  // anything hardcoded here would be readable by anyone and your quota would be theirs to spend.
+  // A demo key lifts the shared-IP limit (~5-15 calls/min, which this tool trips constantly) to
+  // your own per-key allowance. Everything still works without one, just slower and flakier.
+  var CG_KEY_STORE = 'screener_cg_key_sa';
+  function getCgKey(){
+    try { return (localStorage.getItem(CG_KEY_STORE) || '').trim(); } catch(e){ return ''; }
+  }
+  function setCgKey(v){
+    try {
+      if (v) localStorage.setItem(CG_KEY_STORE, v.trim());
+      else localStorage.removeItem(CG_KEY_STORE);
+    } catch(e){}
+  }
+  function cgUrl(url){
+    var key = getCgKey();
+    if (!key) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'x_cg_demo_api_key=' + encodeURIComponent(key);
   }
 
   // ---------- http helper ----------
@@ -2667,7 +2712,7 @@
     var promises = [];
     for (var p = 1; p <= COINGECKO_PAGES; p++){
       promises.push(
-        fetchJson('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=' + p + '&sparkline=false&price_change_percentage=' + COINGECKO_PCT_WINDOWS)
+        fetchJson(cgUrl('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=' + p + '&sparkline=false&price_change_percentage=' + COINGECKO_PCT_WINDOWS))
           .catch(function(){ return []; })
       );
     }
@@ -2723,8 +2768,8 @@
     // a race; removing the dependency can. One tiny extra request every 5 minutes.
     return Promise.all([
       fetchCandles(btcSymbol, '1D').catch(function(){ return {status:'error'}; }),
-      fetchJson('https://api.coingecko.com/api/v3/global').catch(function(){ return null; }),
-      fetchJson('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin').catch(function(){ return null; })
+      fetchJson(cgUrl('https://api.coingecko.com/api/v3/global')).catch(function(){ return null; }),
+      fetchJson(cgUrl('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin')).catch(function(){ return null; })
     ]).then(function(results){
       var btcCandle = results[0];
       var global = results[1];

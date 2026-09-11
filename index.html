@@ -2810,7 +2810,11 @@
         renderMessage('Could not reach live data. See the notice above.');
       });
 
-    loadMarketCaps();
+    // The regime needs BTC's market-cap change, which only exists once loadMarketCaps resolves.
+    // It used to be fired standalone while loadRegime ran in the chain above, so regime almost
+    // always read an empty marketCaps and reported dominance as unmeasurable -- on EVERY fresh
+    // load, until the 5-minute interval happened to re-run it. Recompute as soon as caps land.
+    loadMarketCaps().then(function(){ return loadRegime(); }).catch(function(){});
 
     setInterval(fetchTickersOnce, 30000);
     setInterval(loadMarketCaps, 300000); // market cap moves slowly -- refresh every 5 min

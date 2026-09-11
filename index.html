@@ -451,6 +451,10 @@
           <input type="checkbox" id="tradeableOnly">
           <span id="tradeableText">Ready to trade only</span>
         </label>
+        <label class="checkbox-field" id="cautionLabel" title="By default only a 🟢 TRADE regime can produce a Ready. Tick this to also allow 🟡 CAUTION, which is not a stop sign -- it means BTC is up but dominance is rising (capital rotating into BTC, away from alts), or BTC's own trend is unclear. Those coins appear as 🟡 Ready · half size, never as a plain green Ready, and when caution is dominance-driven the BTC-correlation cap tightens from 0.85 to 0.6 so only genuinely independent names qualify. 🔴 STAND DOWN is never allowed: that is BTC in an actual downtrend, where alt longs lose regardless of setup quality.">
+          <input type="checkbox" id="allowCaution">
+          <span>Allow 🟡 CAUTION (half size)</span>
+        </label>
       </div>
       <div id="advancedControls" style="display:contents;">
         <div class="field">
@@ -712,7 +716,7 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, alertsOn: false, simpleView: true
+    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, alertsOn: false, allowCaution: false, simpleView: true
   };
   var savedConfig = loadConfig();
   var state = {
@@ -735,6 +739,7 @@
     earlyEntryOnly: savedConfig.earlyEntryOnly,
     tradeableOnly: savedConfig.tradeableOnly,
     alertsOn: savedConfig.alertsOn,
+    allowCaution: savedConfig.allowCaution,
     simpleView: savedConfig.simpleView,
     hidden: loadHidden(),
     bybitBases: new Set(),
@@ -774,7 +779,8 @@
       sortDir: DEFAULT_CONFIG.sortDir, bybitOnly: DEFAULT_CONFIG.bybitOnly,
       candleTimeframe: DEFAULT_CONFIG.candleTimeframe, hideIlliquid: DEFAULT_CONFIG.hideIlliquid,
       trendFilter: DEFAULT_CONFIG.trendFilter, earlyEntryOnly: DEFAULT_CONFIG.earlyEntryOnly,
-      tradeableOnly: DEFAULT_CONFIG.tradeableOnly, alertsOn: DEFAULT_CONFIG.alertsOn, simpleView: DEFAULT_CONFIG.simpleView
+      tradeableOnly: DEFAULT_CONFIG.tradeableOnly, alertsOn: DEFAULT_CONFIG.alertsOn,
+      allowCaution: DEFAULT_CONFIG.allowCaution, simpleView: DEFAULT_CONFIG.simpleView
     };
     try {
       var raw = localStorage.getItem('screener_config_sa');
@@ -819,6 +825,7 @@
         earlyEntryOnly: (typeof saved.earlyEntryOnly === 'boolean') ? saved.earlyEntryOnly : DEFAULT_CONFIG.earlyEntryOnly,
         tradeableOnly: (typeof saved.tradeableOnly === 'boolean') ? saved.tradeableOnly : DEFAULT_CONFIG.tradeableOnly,
         alertsOn: (typeof saved.alertsOn === 'boolean') ? saved.alertsOn : DEFAULT_CONFIG.alertsOn,
+        allowCaution: (typeof saved.allowCaution === 'boolean') ? saved.allowCaution : DEFAULT_CONFIG.allowCaution,
         simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView
       };
     } catch(e){ return fallback; }
@@ -829,7 +836,7 @@
         mode: state.mode, weightsByMode: state.weightsByMode, pageSize: state.pageSize,
         sortKey: state.sortKey, sortDir: state.sortDir,
         bybitOnly: state.bybitOnly, candleTimeframe: state.candleTimeframe, hideIlliquid: state.hideIlliquid,
-        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, alertsOn: state.alertsOn, simpleView: state.simpleView
+        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, alertsOn: state.alertsOn, allowCaution: state.allowCaution, simpleView: state.simpleView
       }));
       flashSaved();
     } catch(e){}
@@ -987,7 +994,12 @@
     // (VVV: +42.6% above its level on bar 3). Bar count says early, price says the entry is gone,
     // and R:R does not catch it because that compares range height to the stop, not distance
     // already travelled.
-    maxAbovePct:    15
+    maxAbovePct:    15,
+    // When CAUTION is caused by RISING BTC dominance, capital is rotating out of alts. A coin
+    // that closely tracks BTC is exactly the wrong thing to hold into that; a genuinely
+    // uncorrelated one is not dependent on the rotation causing the caution. So the correlation
+    // bar gets materially stricter in that specific case.
+    cautionBtcCorr: 0.6
   };
   function evaluateTradeable(r, effTrend){
     if (r.distStatus !== 'ok') return {ok:null, reasons:[]};
@@ -1004,8 +1016,15 @@
       why.push('already +' + bs.pctFromTrigger.toFixed(0) + '% past trigger');
     }
 
-    // --- Macro: the regime badge is a hard gate here, not a score discount ---
-    if (state.regime.verdict !== 'TRADE') why.push('regime ' + (state.regime.verdict || 'unresolved'));
+    // --- Macro. TRADE passes outright. CAUTION passes only when explicitly allowed, and is
+    // marked reduced-size rather than treated as equivalent. STAND DOWN is never negotiable:
+    // that is BTC itself in a downtrend, where alt longs lose regardless of setup quality. ---
+    var cautionOk = state.allowCaution && state.regime.verdict === 'CAUTION';
+    if (state.regime.verdict !== 'TRADE' && !cautionOk){
+      why.push('regime ' + (state.regime.verdict || 'unresolved'));
+    }
+    var reducedSize = cautionOk;
+    var domDriven = cautionOk && state.regime.btcDDirection === 'rising';
 
     // --- Trend: genuinely up, not merely "not down" ---
     if (effTrend !== 'up') why.push('trend ' + (effTrend || 'n/a') + ', not up');
@@ -1038,9 +1057,13 @@
     else if (r.marketCap < TRADEABLE.minMarketCap) why.push('market cap ' + fmtUsd(r.marketCap,{compact:true}) + ' (under $20M)');
 
     // --- Independence: don't stack four copies of the same BTC bet ---
-    if (r.btcCorr != null && Math.abs(r.btcCorr) > TRADEABLE.maxBtcCorr) why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + ')');
+    var corrCap = domDriven ? TRADEABLE.cautionBtcCorr : TRADEABLE.maxBtcCorr;
+    if (r.btcCorr != null && Math.abs(r.btcCorr) > corrCap){
+      why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + (domDriven ? ', cap ' + corrCap + ' while dominance rises' : '') + ')');
+    }
 
-    return {ok: why.length === 0, reasons: why, riskPct: riskPct, rrRatio: rrRatio};
+    return {ok: why.length === 0, reasons: why, riskPct: riskPct, rrRatio: rrRatio,
+            reducedSize: reducedSize, domDriven: domDriven};
   }
 
   // Accumulation's equivalent of Tradeable. Deliberately does NOT require regime = TRADE the way
@@ -1080,13 +1103,22 @@
     var bs = r.breakoutStatus;
 
     if (ready){
+      var reduced = !acc && r.tradeReduced === true;
       if (acc){
-        return {rank:3, label:'🟢 Ready', cls:'pos',
+        return {rank:4, label:'🟢 Ready', cls:'pos',
           action:'Valid base — accumulate here; invalid if it breaks its recent low'};
       }
       var lvl = bs ? fmtUsd(bs.triggerLevel) : null;
-      return {rank:3, label:'🟢 Ready', cls:'pos',
-        action: lvl ? ('Entry live — must keep closing above ' + lvl) : 'Entry live — set your stop below the range'};
+      var base = lvl ? ('must keep closing above ' + lvl) : 'set your stop below the range';
+      if (reduced){
+        // Qualifies only because CAUTION was allowed -- say so, and say what to do about it.
+        var cause = r.tradeDomDriven
+          ? 'BTC dominance rising, so alts face a headwind'
+          : 'BTC trend unclear';
+        return {rank:3, label:'🟡 Ready · half size', cls:'watch',
+          action:'Setup is clean but ' + cause + ' — half size; ' + base};
+      }
+      return {rank:4, label:'🟢 Ready', cls:'pos', action:'Entry live — ' + base};
     }
 
     // Not ready -- is it close (structure is there, something else blocks) or just not a setup?
@@ -1233,6 +1265,8 @@
       lastRow.tradeReasons = tr.reasons;
       lastRow.tradeRiskPct = tr.riskPct;
       lastRow.tradeRR = tr.rrRatio;
+      lastRow.tradeReduced = tr.reducedSize;
+      lastRow.tradeDomDriven = tr.domDriven;
 
       var atr = evaluateAccTradeable(lastRow, effTrend);
       lastRow.accTradeable = atr.ok;
@@ -1280,7 +1314,7 @@
     if (state.tradeableOnly){
       // Works on both tabs via the shared verdict: keep only 🟢 Ready, plus anything still
       // loading (rank -1) so the page keeps fetching what it needs to decide.
-      rows = rows.filter(function(r){ return r.verdictRank === 3 || r.verdictRank === -1 || r.verdictRank == null; });
+      rows = rows.filter(function(r){ return r.verdictRank >= 3 || r.verdictRank === -1 || r.verdictRank == null; });
     }
     if (state.search){
       var q = state.search.toUpperCase();
@@ -1857,6 +1891,12 @@
       try { Notification.requestPermission(); } catch(err){}
     }
   });
+  document.getElementById('allowCaution').checked = state.allowCaution;
+  document.getElementById('allowCaution').addEventListener('change', function(e){
+    state.allowCaution = e.target.checked;
+    saveConfig();
+    render();
+  });
   document.getElementById('tradeableOnly').checked = state.tradeableOnly;
   document.getElementById('tradeableOnly').addEventListener('change', function(e){
     state.tradeableOnly = e.target.checked;
@@ -2063,6 +2103,7 @@
     state.earlyEntryOnly = DEFAULT_CONFIG.earlyEntryOnly;
     state.tradeableOnly = DEFAULT_CONFIG.tradeableOnly;
     state.alertsOn = DEFAULT_CONFIG.alertsOn;
+    state.allowCaution = DEFAULT_CONFIG.allowCaution;
     state.candles = {};
     state.candlesAlt = {};
     renderWeightsUI();
@@ -2072,6 +2113,7 @@
     document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
     document.getElementById('tradeableOnly').checked = state.tradeableOnly;
     document.getElementById('alertsOn').checked = state.alertsOn;
+    document.getElementById('allowCaution').checked = state.allowCaution;
     document.getElementById('candleTimeframe').value = state.candleTimeframe;
     document.getElementById('trendFilter').value = state.trendFilter;
     localStorage.removeItem('screener_config_sa');
@@ -2665,11 +2707,17 @@
       } else if (btcTrend === 'up' && btcDDirection === 'rising'){
         verdict = 'CAUTION';
         reason = 'BTC is in an uptrend, but its market cap is growing faster than the total crypto market (dominance rising) — capital is rotating into BTC, not alts. Alt longs are fighting a headwind even on a clean chart.';
+      } else if (btcTrend === 'up' && btcDDirection == null){
+        // Dominance could not be measured (market-cap feed missing or rate-limited). This used
+        // to fall through to TRADE -- a risk gate failing OPEN on absent data, and
+        // indistinguishable from a real TRADE reading. Unknown is not permission.
+        verdict = 'CAUTION';
+        reason = 'BTC is in an uptrend, but dominance direction could not be measured right now (market-cap data unavailable). Treated as CAUTION rather than TRADE: unverified is not the same as clear, and this gate decides which coins read as Ready.';
       } else if (btcTrend === 'up'){
         verdict = 'TRADE';
         reason = btcDDirection === 'falling'
           ? 'BTC is in an uptrend and alts are gaining market-cap share (dominance falling) — the most long-friendly backdrop this regime check looks for.'
-          : 'BTC is in an uptrend. Dominance direction is flat/unclear, but the primary trend supports longs.';
+          : 'BTC is in an uptrend and dominance is measurably flat — not rotating into BTC at the expense of alts.';
       } else if (btcTrend === 'mixed'){
         verdict = 'CAUTION';
         reason = 'BTC\'s own trend is Mixed (neither cleanly above nor below its 200 EMA) — no strong tailwind or headwind either way. Be selective.';

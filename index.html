@@ -340,21 +340,15 @@
       order:4; margin-left:2px;
     }
     table#mainTable.simple-mode tbody tr.simple-row td:last-child .hide-btn{font-size:17px;padding:2px 4px;}
-    /* line 2 (forced by flex-basis:100%): opportunity score -- the hero metric, full width */
+    /* line 2: verdict (left, the hero call) and 24h % (pushed right) */
     table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5){
-      order:5; flex:0 0 100%;
+      order:5; display:inline-flex; align-items:center;
     }
-    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5) .score-cell{justify-content:flex-start;}
-    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5) .score-bar{width:80px;}
-    /* line 3: 24h % (left) and BTC corr (pushed right via auto margin) as small labeled chips */
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(5) .pill{font-size:13px;padding:3px 9px;}
     table#mainTable.simple-mode tbody tr.simple-row td:nth-child(4){
-      order:6; display:inline-flex; align-items:center; gap:5px;
+      order:6; margin-left:auto; display:inline-flex; align-items:center; gap:5px;
     }
-    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(6){
-      order:7; margin-left:auto; display:inline-flex; align-items:center; gap:5px;
-    }
-    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(4)::before,
-    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(6)::before{
+    table#mainTable.simple-mode tbody tr.simple-row td:nth-child(4)::before{
       content:attr(data-label);
       font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;
       color:var(--text-faint);font-weight:600;
@@ -363,7 +357,7 @@
     table#mainTable.simple-mode tbody tr.simple-row td.read-cell{
       order:8; flex:0 0 100%;
       max-width:none; overflow:visible; text-overflow:clip; white-space:normal;
-      font-size:12.5px; line-height:1.4;
+      font-size:13px; line-height:1.45; color:var(--text-dim);
     }
   }
 </style>
@@ -438,7 +432,7 @@
         </label>
         <label class="checkbox-field" id="tradeableLabel" title="Breakout tab only. A higher bar than Setup: requires a valid coil OR a live (fresh/confirming) breakout, PLUS regime = TRADE, trend genuinely up, timeframes aligned, an ATR-based stop within 8%, measured-move R:R of at least 2, real participation (volume drying up while coiling / expanding once triggered), $5M+ daily volume, $20M+ market cap, and BTC correlation under 0.85. Hover any row's Tradeable cell to see exactly which checks it failed.">
           <input type="checkbox" id="tradeableOnly">
-          <span>Tradeable only (strictest)</span>
+          <span id="tradeableText">Ready to trade only</span>
         </label>
       </div>
       <div id="advancedControls" style="display:contents;">
@@ -691,7 +685,7 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, simpleView: true
+    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, simpleView: true
   };
   var savedConfig = loadConfig();
   var state = {
@@ -722,14 +716,15 @@
   };
 
   function currentWeights(){ return state.weightsByMode[state.mode]; }
+  // Simple View is the beginner path: one verdict, one instruction. No score to interpret, no
+  // three badges that can disagree with each other -- those live in Full View for expert use.
   var SIMPLE_COLUMNS = [
     {key:'rank', label:'#', sortable:false},
     {key:'symbol', label:'Coin', sortable:true},
     {key:'price', label:'Price', sortable:true, num:true},
     {key:'mom', label:'24h %', sortable:true, num:true},
-    {key:'opportunity', label:'Opportunity', sortable:true, num:true},
-    {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
-    {key:'read', label:'Why', sortable:false},
+    {key:'verdict', label:'Verdict', sortable:true},
+    {key:'action', label:'What to do', sortable:false},
     {key:'hide', label:'', sortable:false}
   ];
   function currentColumns(){ return state.simpleView ? SIMPLE_COLUMNS : MODES[state.mode].columns; }
@@ -1007,6 +1002,71 @@
     return {ok: why.length === 0, reasons: why, riskPct: riskPct, rrRatio: rrRatio};
   }
 
+  // Accumulation's equivalent of Tradeable. Deliberately does NOT require regime = TRADE the way
+  // the breakout side does: accumulating a base during 🟡 CAUTION is the whole point of the tab --
+  // you're buying quiet before a move, not chasing one. Only 🔴 STAND DOWN blocks it, because
+  // building alt positions while BTC itself is breaking down is how you catch a falling knife.
+  function evaluateAccTradeable(r, effTrend){
+    if (r.distStatus !== 'ok') return {ok:null, reasons:[]};
+    var why = [];
+    if (r.validAccEntry !== true) why.push('not a valid base yet');
+    if (state.regime.verdict === 'STAND DOWN') why.push('BTC downtrend (stand down)');
+    if (effTrend === 'down') why.push('still making lower lows');
+    var riskPct = null;
+    if (r.atr14 != null && r.price > 0){
+      riskPct = (1.5 * r.atr14 / r.price) * 100;
+      if (riskPct > TRADEABLE.maxRiskPct) why.push('stop ' + riskPct.toFixed(1) + '% away');
+    } else { why.push('no ATR'); }
+    if (r.totalVolume == null) why.push('24h volume unknown');
+    else if (r.totalVolume < TRADEABLE.minDollarVol) why.push('24h volume ' + fmtUsd(r.totalVolume,{compact:true}) + ' (under $5M)');
+    if (r.marketCap == null) why.push('market cap unknown');
+    else if (r.marketCap < TRADEABLE.minMarketCap) why.push('market cap ' + fmtUsd(r.marketCap,{compact:true}) + ' (under $20M)');
+    if (r.btcCorr != null && Math.abs(r.btcCorr) > TRADEABLE.maxBtcCorr) why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + ')');
+    return {ok: why.length === 0, reasons: why, riskPct: riskPct};
+  }
+
+  // ---------- one verdict per coin ----------
+  // The whole point: a beginner should not have to reconcile Setup vs Breakout vs Tradeable vs
+  // Opportunity to answer "do I look at this or not". This collapses all of it into a single
+  // ranked call plus one plain sentence saying what to actually do next. Same shape on both tabs.
+  function computeVerdict(r, effTrend){
+    var acc = state.mode === 'accumulation';
+    if (r.distStatus !== 'ok') return {rank:-1, label:null, cls:'flat', action:'Loading…'};
+    if (r.isIlliquid) return {rank:0, label:'🔴 Avoid', cls:'neg', action:'Barely trades — skip it'};
+
+    var ready = acc ? (r.accTradeable === true) : (r.tradeable === true);
+    var blockers = acc ? (r.accTradeReasons || []) : (r.tradeReasons || []);
+    var bs = r.breakoutStatus;
+
+    if (ready){
+      if (acc){
+        return {rank:3, label:'🟢 Ready', cls:'pos',
+          action:'Valid base — accumulate here; invalid if it breaks its recent low'};
+      }
+      var lvl = bs ? fmtUsd(bs.triggerLevel) : null;
+      return {rank:3, label:'🟢 Ready', cls:'pos',
+        action: lvl ? ('Entry live — must keep closing above ' + lvl) : 'Entry live — set your stop below the range'};
+    }
+
+    // Not ready -- is it close (structure is there, something else blocks) or just not a setup?
+    var structureThere = acc ? (r.validAccEntry === true)
+      : (r.validEarlyEntry === true || (bs && (bs.phase === 'fresh' || bs.phase === 'confirming')));
+
+    if (!acc && bs && bs.phase === 'failed'){
+      return {rank:0, label:'🔴 Avoid', cls:'neg',
+        action:'Breakout failed — needs to reclaim ' + fmtUsd(bs.triggerLevel) + ' first'};
+    }
+    if (effTrend === 'down'){
+      return {rank:0, label:'🔴 Avoid', cls:'neg', action:'Downtrend — don\'t buy into this'};
+    }
+    if (structureThere){
+      return {rank:2, label:'🟡 Watch', cls:'watch',
+        action: blockers.length ? ('Almost — waiting on: ' + blockers[0]) : 'Almost — one check still missing'};
+    }
+    return {rank:1, label:'⚪ Not yet', cls:'flat',
+      action: acc ? 'No base formed yet' : 'No setup — nothing to act on'};
+  }
+
   function computeRows(){
     var btc = state.tickers['BTC'];
     var btcMom = btc ? btc.mom : 0;
@@ -1133,6 +1193,16 @@
       lastRow.tradeRiskPct = tr.riskPct;
       lastRow.tradeRR = tr.rrRatio;
 
+      var atr = evaluateAccTradeable(lastRow, effTrend);
+      lastRow.accTradeable = atr.ok;
+      lastRow.accTradeReasons = atr.reasons;
+
+      var vd = computeVerdict(lastRow, effTrend);
+      lastRow.verdictRank = vd.rank;
+      lastRow.verdictLabel = vd.label;
+      lastRow.verdictCls = vd.cls;
+      lastRow.verdictAction = vd.action;
+
       var opp = computeOpportunity(lastRow, effTrend);
       lastRow.opportunityScore = opp.score;
       lastRow.opportunityLabel = opp.label;
@@ -1167,9 +1237,9 @@
       rows = rows.filter(function(r){ return r.simpleValidEntry !== false; });
     }
     if (state.tradeableOnly){
-      // Breakout-tab concept only; on Accumulation it would gate a base against breakout criteria.
-      // Unresolved (null) rows stay visible so the page keeps fetching what it needs, same as above.
-      rows = rows.filter(function(r){ return state.mode === 'accumulation' || r.tradeable !== false; });
+      // Works on both tabs via the shared verdict: keep only 🟢 Ready, plus anything still
+      // loading (rank -1) so the page keeps fetching what it needs to decide.
+      rows = rows.filter(function(r){ return r.verdictRank === 3 || r.verdictRank === -1 || r.verdictRank == null; });
     }
     if (state.search){
       var q = state.search.toUpperCase();
@@ -1239,7 +1309,7 @@
       });
     }
 
-    var SORT_KEY_MAP = {symbol:'base', dist:'distPct', surge:'volSurge', distLow:'distFromLowPct', volatility:'volatilityRatio', quietVol:'volSurge', rsi14:'rsi14', donch:'donchDisplayPct', donchWidth:'donchWidthPct', channelPos:'channelPosPct', volMcap:'volMcapPct', rangePos:'rangePos24h', opportunity:'simpleOpportunityScore'};
+    var SORT_KEY_MAP = {symbol:'base', dist:'distPct', surge:'volSurge', distLow:'distFromLowPct', volatility:'volatilityRatio', quietVol:'volSurge', rsi14:'rsi14', donch:'donchDisplayPct', donchWidth:'donchWidthPct', channelPos:'channelPosPct', volMcap:'volMcapPct', rangePos:'rangePos24h', opportunity:'simpleOpportunityScore', verdict:'verdictRank'};
     rows.sort(function(a,b){
       var key = SORT_KEY_MAP[state.sortKey] || state.sortKey;
       var av = a[key];
@@ -1359,33 +1429,24 @@
         tdMomS.innerHTML = '<span class="pill '+pctClass(r.mom)+'">'+fmtPct(r.mom)+'</span>';
         tr.appendChild(tdMomS);
 
-        var tdOpp = document.createElement('td');
-        tdOpp.className = 'num-col';
-        tdOpp.setAttribute('data-label', 'Opportunity');
-        if (r.simpleOpportunityScore == null){
-          tdOpp.innerHTML = '<span class="spin" title="Checking setup…"></span>';
+        var tdVerdict = document.createElement('td');
+        tdVerdict.setAttribute('data-label', 'Verdict');
+        if (r.verdictLabel == null){
+          tdVerdict.innerHTML = '<span class="spin" title="Checking…"></span>';
         } else {
-          var oppScore = r.simpleOpportunityScore;
-          var oppCls = oppScore>=75 ? 'pos' : (oppScore>=50 ? 'watch' : (oppScore>=25 ? 'flat' : 'neg'));
-          var oppTitle = state.mode === 'accumulation'
-            ? 'Base quality (deep ATH drawdown, proximity to its own low, range contraction, quiet volume, neutral RSI, dilution risk) combined with the current Regime verdict.'
-            : 'Setup quality (tightness, position in range, RSI, hasn\'t already popped, trend, timeframe agreement, dilution risk) combined with the current Regime verdict.';
-          tdOpp.innerHTML = '<div class="score-cell"><span class="score-bar"><i style="width:'+oppScore+'%"></i></span><span class="pill '+oppCls+'" title="'+oppTitle+'">'+r.simpleOpportunityLabel+' '+oppScore+'</span></div>';
+          var vTitle = state.mode === 'accumulation'
+            ? 'Ready = a valid base, liquid, not a BTC proxy, sane stop distance, and BTC not in a downtrend. Watch = the base is there but one check still fails. Not yet = no base. Avoid = downtrend or barely trades.'
+            : 'Ready = valid structure, regime TRADE, trend up, timeframes agree, stop within 8%, R:R at least 2, volume right for its phase, liquid, not a BTC proxy. Watch = structure is there but one check still fails. Not yet = no setup. Avoid = failed breakout or downtrend.';
+          tdVerdict.innerHTML = '<span class="pill '+r.verdictCls+'" title="'+vTitle+'">'+r.verdictLabel+'</span>';
         }
-        tr.appendChild(tdOpp);
+        tr.appendChild(tdVerdict);
 
-        var tdCorrS = document.createElement('td');
-        tdCorrS.className = 'num-col';
-        tdCorrS.setAttribute('data-label', 'BTC Corr');
-        tdCorrS.innerHTML = btcCorrCellHtml(r);
-        tr.appendChild(tdCorrS);
-
-        var tdWhy = document.createElement('td');
-        tdWhy.className = 'read-cell';
+        var tdAction = document.createElement('td');
+        tdAction.className = 'read-cell';
+        tdAction.textContent = r.verdictAction || '';
         var narrS = narrateRow(r);
-        tdWhy.textContent = narrS.short;
-        if (narrS.full) tdWhy.title = narrS.full;
-        tr.appendChild(tdWhy);
+        if (narrS.full) tdAction.title = narrS.full;
+        tr.appendChild(tdAction);
 
         var tdHideS = document.createElement('td');
         var hideBtnS = document.createElement('button');
@@ -1755,9 +1816,13 @@
   document.getElementById('simpleView').checked = state.simpleView;
   function applyViewVisibility(){
     document.getElementById('advancedControls').style.display = state.simpleView ? 'none' : 'contents';
-    var validInSimple = ['rank','symbol','price','mom','opportunity'];
+    // The pre-breakout-coil checkbox is an expert tool and overlaps confusingly with the verdict,
+    // so Simple View shows only the single "Ready to trade only" switch.
+    var eeLabel = document.getElementById('earlyEntryLabel');
+    if (eeLabel) eeLabel.style.display = state.simpleView ? 'none' : 'flex';
+    var validInSimple = ['rank','symbol','price','mom','verdict'];
     if (state.simpleView && validInSimple.indexOf(state.sortKey) === -1){
-      state.sortKey = 'opportunity';
+      state.sortKey = 'verdict';
       state.sortDir = 'desc';
     }
   }

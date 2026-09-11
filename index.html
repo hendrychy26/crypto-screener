@@ -83,6 +83,18 @@
   .dot.down{background:var(--negative);box-shadow:0 0 0 3px var(--neg-bg);}
   .dot.pending{background:var(--text-faint);}
 
+  .alert-strip{display:none;}
+  .alert-strip.show{
+    display:block;margin-bottom:14px;padding:10px 14px;
+    background:var(--pos-bg);border:1px solid var(--positive);border-radius:9px;
+  }
+  .alert-head{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+    color:var(--positive);margin-bottom:6px;
+  }
+  .alert-row{font-size:13px;color:var(--text);padding:2px 0;}
+  .alert-row .muted{font-size:11px;}
   .mode-tabs{display:flex;gap:6px;margin-bottom:12px;}
   .mode-tab{
     all:unset;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;
@@ -382,6 +394,7 @@
   </div>
 
   <div class="banner" id="banner"></div>
+  <div class="alert-strip" id="alertStrip"></div>
 
   <div class="mode-tabs" id="modeTabs">
     <button class="mode-tab active" data-mode="breakout">Breakout</button>
@@ -429,6 +442,10 @@
         <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist. Breakout tab: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid. Accumulation tab: deep discount from ATH, near its own low, contracting range, quiet volume, neutral RSI, limited dilution risk, liquid, not still making fresh lows.">
           <input type="checkbox" id="earlyEntryOnly">
           <span id="earlyEntryText">Early Entry only (strict)</span>
+        </label>
+        <label class="checkbox-field" id="alertsLabel" title="Notifies you when a coin ENTERS the ✅ Confirming phase -- it broke its 20-bar high and then held above that trigger for several bars. Not Fresh: a single close above a level fails often, Confirming is the state that survived a retest. Needs this page open in a tab; your browser will ask permission once. One alert per coin.">
+          <input type="checkbox" id="alertsOn">
+          <span>🔔 Alert on ✅ Confirming</span>
         </label>
         <label class="checkbox-field" id="tradeableLabel" title="Breakout tab only. A higher bar than Setup: requires a valid coil OR a live (fresh/confirming) breakout, PLUS regime = TRADE, trend genuinely up, timeframes aligned, an ATR-based stop within 8%, measured-move R:R of at least 2, real participation (volume drying up while coiling / expanding once triggered), $5M+ daily volume, $20M+ market cap, and BTC correlation under 0.85. Hover any row's Tradeable cell to see exactly which checks it failed.">
           <input type="checkbox" id="tradeableOnly">
@@ -685,7 +702,7 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, simpleView: true
+    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, alertsOn: false, simpleView: true
   };
   var savedConfig = loadConfig();
   var state = {
@@ -707,6 +724,7 @@
     trendFilter: savedConfig.trendFilter,
     earlyEntryOnly: savedConfig.earlyEntryOnly,
     tradeableOnly: savedConfig.tradeableOnly,
+    alertsOn: savedConfig.alertsOn,
     simpleView: savedConfig.simpleView,
     hidden: loadHidden(),
     bybitBases: new Set(),
@@ -746,7 +764,7 @@
       sortDir: DEFAULT_CONFIG.sortDir, bybitOnly: DEFAULT_CONFIG.bybitOnly,
       candleTimeframe: DEFAULT_CONFIG.candleTimeframe, hideIlliquid: DEFAULT_CONFIG.hideIlliquid,
       trendFilter: DEFAULT_CONFIG.trendFilter, earlyEntryOnly: DEFAULT_CONFIG.earlyEntryOnly,
-      tradeableOnly: DEFAULT_CONFIG.tradeableOnly, simpleView: DEFAULT_CONFIG.simpleView
+      tradeableOnly: DEFAULT_CONFIG.tradeableOnly, alertsOn: DEFAULT_CONFIG.alertsOn, simpleView: DEFAULT_CONFIG.simpleView
     };
     try {
       var raw = localStorage.getItem('screener_config_sa');
@@ -790,6 +808,7 @@
         trendFilter: ['all','up','down','updown'].indexOf(saved.trendFilter) !== -1 ? saved.trendFilter : DEFAULT_CONFIG.trendFilter,
         earlyEntryOnly: (typeof saved.earlyEntryOnly === 'boolean') ? saved.earlyEntryOnly : DEFAULT_CONFIG.earlyEntryOnly,
         tradeableOnly: (typeof saved.tradeableOnly === 'boolean') ? saved.tradeableOnly : DEFAULT_CONFIG.tradeableOnly,
+        alertsOn: (typeof saved.alertsOn === 'boolean') ? saved.alertsOn : DEFAULT_CONFIG.alertsOn,
         simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView
       };
     } catch(e){ return fallback; }
@@ -800,7 +819,7 @@
         mode: state.mode, weightsByMode: state.weightsByMode, pageSize: state.pageSize,
         sortKey: state.sortKey, sortDir: state.sortDir,
         bybitOnly: state.bybitOnly, candleTimeframe: state.candleTimeframe, hideIlliquid: state.hideIlliquid,
-        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, simpleView: state.simpleView
+        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, alertsOn: state.alertsOn, simpleView: state.simpleView
       }));
       flashSaved();
     } catch(e){}
@@ -1807,6 +1826,15 @@
   document.getElementById('candleTimeframe').value = state.candleTimeframe;
   document.getElementById('trendFilter').value = state.trendFilter;
   document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
+  document.getElementById('alertsOn').checked = state.alertsOn;
+  document.getElementById('alertsOn').addEventListener('change', function(e){
+    state.alertsOn = e.target.checked;
+    saveConfig();
+    // Ask once, only when the user actually opts in -- never on page load.
+    if (state.alertsOn && window.Notification && Notification.permission === 'default'){
+      try { Notification.requestPermission(); } catch(err){}
+    }
+  });
   document.getElementById('tradeableOnly').checked = state.tradeableOnly;
   document.getElementById('tradeableOnly').addEventListener('change', function(e){
     state.tradeableOnly = e.target.checked;
@@ -2012,6 +2040,7 @@
     state.trendFilter = DEFAULT_CONFIG.trendFilter;
     state.earlyEntryOnly = DEFAULT_CONFIG.earlyEntryOnly;
     state.tradeableOnly = DEFAULT_CONFIG.tradeableOnly;
+    state.alertsOn = DEFAULT_CONFIG.alertsOn;
     state.candles = {};
     state.candlesAlt = {};
     renderWeightsUI();
@@ -2020,6 +2049,7 @@
     document.getElementById('hideIlliquid').checked = state.hideIlliquid;
     document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
     document.getElementById('tradeableOnly').checked = state.tradeableOnly;
+    document.getElementById('alertsOn').checked = state.alertsOn;
     document.getElementById('candleTimeframe').value = state.candleTimeframe;
     document.getElementById('trendFilter').value = state.trendFilter;
     localStorage.removeItem('screener_config_sa');
@@ -2336,22 +2366,50 @@
     clearTimeout(candleFetchTimer);
     candleFetchTimer = setTimeout(function(){ runCandleQueue(); runAltCandleQueue(); }, 250);
   }
+  // Candles were originally fetched once and cached forever, which froze breakoutStatus for the
+  // life of the page -- fine when it was just a column, fatal for an alert that fires on a phase
+  // CHANGE. Re-fetch anything older than CANDLE_TTL so the status can actually move.
+  var CANDLE_TTL = 600000; // 10 min; a Daily/4H phase can only change on a bar close anyway
+  var candleInFlight = {};
   function runCandleQueue(){
     if (candleQueueRunning) return;
+    var now = Date.now();
     var todo = visibleForCandles.filter(function(symbol){
+      if (candleInFlight[symbol]) return false;
       var c = state.candles[symbol];
-      return !c || (c.status !== 'ok' && c.status !== 'pending');
+      if (!c) return true;
+      if (c.status === 'pending') return false;
+      if (c.status !== 'ok') return true;
+      return (now - (c.fetchedAt || 0)) > CANDLE_TTL; // stale -> refresh in place
     });
     if (!todo.length) return;
     candleQueueRunning = true;
     (function next(i){
       if (i >= todo.length){ candleQueueRunning = false; return; }
       var symbol = todo[i];
-      state.candles[symbol] = {status:'pending'};
+      // Only blank the cell if we have nothing to show; a stale refresh keeps the old values
+      // visible so the table doesn't flash back to spinners every 10 minutes.
+      if (!state.candles[symbol] || state.candles[symbol].status !== 'ok'){
+        state.candles[symbol] = {status:'pending'};
+      }
+      candleInFlight[symbol] = true;
       fetchCandles(symbol, state.candleTimeframe, true)
-        .then(function(result){ state.candles[symbol] = result; })
-        .catch(function(){ state.candles[symbol] = {status:'error'}; })
+        .then(function(result){
+          var prev = state.candles[symbol];
+          var prevPhase = (prev && prev.status === 'ok' && prev.breakoutStatus) ? prev.breakoutStatus.phase : null;
+          result.fetchedAt = Date.now();
+          state.candles[symbol] = result;
+          if (result.status === 'ok'){
+            maybeAlertConfirming(symbol, prevPhase, result.breakoutStatus);
+          }
+        })
+        .catch(function(){
+          if (!state.candles[symbol] || state.candles[symbol].status !== 'ok'){
+            state.candles[symbol] = {status:'error'};
+          }
+        })
         .then(function(){
+          delete candleInFlight[symbol];
           render();
           setTimeout(function(){ next(i+1); }, 120);
         });
@@ -2381,6 +2439,57 @@
           setTimeout(function(){ next(i+1); }, 160);
         });
     })(0);
+  }
+
+  // ---------- ✅ Confirming alerts ----------
+  // Fires when a coin ENTERS the confirming phase -- broke its 20-bar high and then held above
+  // that trigger for several bars. Deliberately not Fresh: Fresh is a single close and fails
+  // often, Confirming is the state that survived a retest. One alert per coin per phase, kept in
+  // localStorage, so a reload doesn't re-announce everything you've already seen.
+  var ALERT_KEY = 'screener_alerted_sa';
+  var alertedMap = (function(){ try { return JSON.parse(localStorage.getItem(ALERT_KEY) || '{}'); } catch(e){ return {}; } })();
+  function saveAlerted(){ try { localStorage.setItem(ALERT_KEY, JSON.stringify(alertedMap)); } catch(e){} }
+  var alertLog = [];
+
+  function maybeAlertConfirming(symbol, prevPhase, bs){
+    var base = String(symbol).split('_')[0];
+    if (!bs || bs.phase !== 'confirming'){
+      // Left the confirming state -- clear the memo so a genuine future re-entry can alert again.
+      if (alertedMap[base] && (!bs || bs.phase !== 'confirming')){ delete alertedMap[base]; saveAlerted(); }
+      return;
+    }
+    if (prevPhase === 'confirming') return;  // already in it, not a transition
+    if (alertedMap[base]) return;            // already told the user
+    alertedMap[base] = Date.now();
+    saveAlerted();
+    if (!state.alertsOn) return;             // still memoized, just silent
+    fireAlert(base, bs);
+  }
+
+  function fireAlert(base, bs){
+    var line = base + ' — breakout confirming, holding above ' + fmtUsd(bs.triggerLevel);
+    alertLog.unshift({base: base, text: line, at: Date.now()});
+    alertLog = alertLog.slice(0, 8);
+    renderAlertStrip();
+    try {
+      if (window.Notification && Notification.permission === 'granted'){
+        new Notification('✅ ' + base + ' confirming', { body: 'Holding above ' + fmtUsd(bs.triggerLevel), tag: 'confirm-' + base });
+      }
+    } catch(e){}
+  }
+
+  function renderAlertStrip(){
+    var el = document.getElementById('alertStrip');
+    if (!el) return;
+    if (!alertLog.length){ el.className = 'alert-strip'; el.innerHTML = ''; return; }
+    el.className = 'alert-strip show';
+    el.innerHTML = '<div class="alert-head">✅ Confirming <button class="hidden-link" id="alertClear">clear</button></div>'
+      + alertLog.map(function(a){
+          return '<div class="alert-row"><strong>' + a.base + '</strong> ' + a.text.replace(a.base + ' — ', '')
+               + ' <span class="muted">' + timeAgo(a.at) + '</span></div>';
+        }).join('');
+    var cb = document.getElementById('alertClear');
+    if (cb) cb.addEventListener('click', function(){ alertLog = []; renderAlertStrip(); });
   }
 
   // ---------- data wiring (direct fetch, no MCP / connector needed) ----------

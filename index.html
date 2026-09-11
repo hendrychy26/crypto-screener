@@ -2740,8 +2740,15 @@
         // browser reports it as a plain network failure). Reconstruct the market's aggregate
         // move from the top-250 data already loaded: cap-weighted, which is what the total
         // market cap change effectively measures.
+        // BTC must be EXCLUDED from this aggregate. It is ~60% of total crypto market cap, so
+        // including it means comparing BTC's move against a number BTC itself dominates --
+        // which mathematically erases the very dominance shift being measured. A first attempt
+        // did include it and produced "dominance falling" at the exact moment BTC was
+        // outrunning the market by 2.4 points. Comparing BTC against the REST of the market is
+        // both correct here and closer to the question actually being asked.
         var wSum = 0, wTot = 0;
         Object.keys(state.marketCaps).forEach(function(k){
+          if (k === 'BTC') return;
           var m = state.marketCaps[k];
           if (m && m.marketCap > 0 && m.mcapChangePct != null){
             wSum += m.marketCap * m.mcapChangePct;

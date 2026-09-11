@@ -736,6 +736,26 @@
       Object.keys(MODES).forEach(function(mode){
         Object.assign(mergedWbm[mode], savedWbm[mode] || {});
       });
+      // One-time migration: the default candle timeframe changed from 4H to Daily after some
+      // visitors had already saved a 4H preference (from back when 4H was the default). Without
+      // this, "change the default" would silently do nothing for anyone who'd already loaded the
+      // page once, since a saved value always wins over DEFAULT_CONFIG. Runs once per browser,
+      // then gets out of the way -- a manual switch back to 4H after this still sticks normally.
+      var migratedDaily = false;
+      try { migratedDaily = localStorage.getItem('screener_migrated_daily_default_sa') === '1'; } catch(e){}
+      var candleTimeframe = (saved.candleTimeframe === '4h' || saved.candleTimeframe === '1D') ? saved.candleTimeframe : DEFAULT_CONFIG.candleTimeframe;
+      if (!migratedDaily){
+        candleTimeframe = '1D';
+        try {
+          localStorage.setItem('screener_migrated_daily_default_sa', '1');
+          // Also correct the saved blob itself -- otherwise the next reload re-reads the still-4h
+          // value from disk (the migration flag is now set, so the override above wouldn't fire
+          // twice) and silently reverts. Re-serializing `saved` as-is is safe since it already
+          // carries the full config shape written by saveConfig().
+          saved.candleTimeframe = '1D';
+          localStorage.setItem('screener_config_sa', JSON.stringify(saved));
+        } catch(e){}
+      }
       return {
         mode: MODES.hasOwnProperty(saved.mode) ? saved.mode : DEFAULT_CONFIG.mode,
         weightsByMode: mergedWbm,
@@ -743,7 +763,7 @@
         sortKey: saved.sortKey || DEFAULT_CONFIG.sortKey,
         sortDir: saved.sortDir || DEFAULT_CONFIG.sortDir,
         bybitOnly: (typeof saved.bybitOnly === 'boolean') ? saved.bybitOnly : DEFAULT_CONFIG.bybitOnly,
-        candleTimeframe: (saved.candleTimeframe === '4h' || saved.candleTimeframe === '1D') ? saved.candleTimeframe : DEFAULT_CONFIG.candleTimeframe,
+        candleTimeframe: candleTimeframe,
         hideIlliquid: (typeof saved.hideIlliquid === 'boolean') ? saved.hideIlliquid : DEFAULT_CONFIG.hideIlliquid,
         trendFilter: ['all','up','down','updown'].indexOf(saved.trendFilter) !== -1 ? saved.trendFilter : DEFAULT_CONFIG.trendFilter,
         earlyEntryOnly: (typeof saved.earlyEntryOnly === 'boolean') ? saved.earlyEntryOnly : DEFAULT_CONFIG.earlyEntryOnly,

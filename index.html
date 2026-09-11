@@ -436,6 +436,10 @@
           <input type="checkbox" id="earlyEntryOnly">
           <span id="earlyEntryText">Early Entry only (strict)</span>
         </label>
+        <label class="checkbox-field" id="tradeableLabel" title="Breakout tab only. A higher bar than Setup: requires a valid coil OR a live (fresh/confirming) breakout, PLUS regime = TRADE, trend genuinely up, timeframes aligned, an ATR-based stop within 8%, measured-move R:R of at least 2, real participation (volume drying up while coiling / expanding once triggered), $5M+ daily volume, $20M+ market cap, and BTC correlation under 0.85. Hover any row's Tradeable cell to see exactly which checks it failed.">
+          <input type="checkbox" id="tradeableOnly">
+          <span>Tradeable only (strictest)</span>
+        </label>
       </div>
       <div id="advancedControls" style="display:contents;">
         <div class="field">
@@ -476,10 +480,10 @@
         <tr id="headRow"></tr>
       </thead>
       <tbody id="tbody">
-        <tr><td colspan="20" class="empty">Connecting to live market data…</td></tr>
+        <tr><td colspan="21" class="empty">Connecting to live market data…</td></tr>
       </tbody>
       <tfoot>
-        <tr><td colspan="20" id="footNote"></td></tr>
+        <tr><td colspan="21" id="footNote"></td></tr>
       </tfoot>
     </table>
   </div>
@@ -502,6 +506,18 @@
             <li><span class="num">—</span> — no breakout detected in the lookback window at all.</li>
           </ul>
           Every badge shows the actual watch level right in the cell — <span class="num">hold &gt; $X (+Y%)</span> for Fresh/Confirming/Extended, or <span class="num">reclaim &gt; $X (−Y%)</span> for Failed — X is the fixed trigger price from when that breakout was detected, Y is your live distance to it; hover for the fuller explanation. Also folded into Read/Why and searchable, e.g. <span class="num">confirming breakout</span> or <span class="num">extended</span>.</li>
+        <li><strong>Tradeable</strong> (Breakout tab) is the highest bar in this screener and the one to act on. <strong>Setup only describes a shape; Tradeable asks whether that shape is worth risking money on today.</strong> It requires all of:
+          <ul>
+            <li><strong>Structure</strong> — either a valid coil (<span class="num">✓ Coiled</span>) or a live breakout still in <span class="num">🆕 Fresh</span> / <span class="num">✅ Confirming</span>. Failed and Extended breakouts are rejected.</li>
+            <li><strong>Regime = 🟢 TRADE</strong> — a hard gate here, not the soft discount the Opportunity score applies. No longs screened during 🟡 CAUTION or 🔴 STAND DOWN.</li>
+            <li><strong>Trend genuinely up</strong> (not merely "not down") and <strong>timeframes agreeing</strong> (✓, not just the absence of ⚠).</li>
+            <li><strong>A stop you can size around</strong> — 1.5x ATR(14) structural stop must sit within 8% of price. A perfect pattern whose invalidation is 25% away is not a trade.</li>
+            <li><strong>R:R ≥ 2</strong> — measured move (the Donchian range height projected from the breakout) divided by that risk.</li>
+            <li><strong>Participation appropriate to its phase</strong> — volume <em>drying up</em> (≤1.2x) while still coiling, or <em>expanding</em> (≥1.3x) once triggered. These are deliberately opposite tests: a coil on rising volume is churn, and a breakout on flat volume is the textbook failure.</li>
+            <li><strong>Real liquidity</strong> — $5M+ 24h volume and $20M+ market cap, so the spread doesn't eat the move.</li>
+            <li><strong>Not a BTC proxy</strong> — |BTC correlation| under 0.85. Four signals all correlated 0.9 to BTC is one position at 4x size, not four positions.</li>
+          </ul>
+          Passing rows show <span class="num">✅ R:R 2.4</span> with the risk % beneath. Rows that fail show <span class="num">—</span>; <strong>hover it to see exactly which checks blocked it</strong>, which is usually more informative than the pass itself. Note the volume test reads the last <em>completed</em> bar, never the still-forming current one — an early-in-the-day Daily bar always looks artificially quiet.</li>
         <li><strong>Setup</strong> (Breakout tab) is a strict, all-or-nothing pre-breakout checklist, shown as <span class="num">✓ Coiled</span> when every one of these holds: Donchian(20) width ≤10% (tight range), price sitting in the upper half of that range without having already broken out (55-97% channel position), RSI(14) 42-66 (healthy, not overbought or dying), 24h move ≤8% (hasn't already popped), trend not down, no TF Agree conflict, FDV/MCap ≤1.6x (limited dilution risk), and not flagged illiquid.</li>
         <li>The <strong>"Early Entry only (strict)"</strong> checkbox (relabels itself <strong>"Valid Base only (strict)"</strong> on the Accumulation tab) hides everything that doesn't pass the checklist for whichever tab you're on — Breakout's pre-breakout coil checklist above, or Accumulation's own: ATH drawdown ≤-60% (a real discount, not a dip), within 20% of its own recent low, contracting range (volatility ratio ≤1.0x), quiet volume (Vol/MCap ≤5%), neutral RSI 35-60, limited dilution risk, liquid, and not still making fresh lows. These are deliberately different checklists for different jobs — a small, high-confidence shortlist rather than a soft ranking, because the point of either screen is precision over coverage. A coin still loading its candles is kept visible rather than hidden, the same way the Trend filter works, so the page has something to resolve.</li>
         <li><strong>Opportunity</strong> (Simple view) is a single 0-100 score that folds the checklist above into one number instead of a dozen columns, so you don't need the full expert table to get a read. It's <strong>mode-aware</strong> — Breakout and Accumulation compute genuinely different numbers from different inputs (coiled-near-highs vs. deep-and-quiet-base), so switching tabs changes the ranking, not just the label — and both are discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE).
@@ -589,6 +605,7 @@
         {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
         {key:'setup', label:'Setup', sortable:false},
         {key:'breakoutStatus', label:'Breakout', sortable:false},
+        {key:'tradeable', label:'Tradeable', sortable:false},
         {key:'read', label:'Read', sortable:false},
         {key:'score', label:'Score', sortable:true, num:true},
         {key:'hide', label:'', sortable:false}
@@ -674,7 +691,7 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, simpleView: true
+    pageSize: 50, sortKey: 'opportunity', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, simpleView: true
   };
   var savedConfig = loadConfig();
   var state = {
@@ -695,6 +712,7 @@
     hideIlliquid: savedConfig.hideIlliquid,
     trendFilter: savedConfig.trendFilter,
     earlyEntryOnly: savedConfig.earlyEntryOnly,
+    tradeableOnly: savedConfig.tradeableOnly,
     simpleView: savedConfig.simpleView,
     hidden: loadHidden(),
     bybitBases: new Set(),
@@ -733,7 +751,7 @@
       sortDir: DEFAULT_CONFIG.sortDir, bybitOnly: DEFAULT_CONFIG.bybitOnly,
       candleTimeframe: DEFAULT_CONFIG.candleTimeframe, hideIlliquid: DEFAULT_CONFIG.hideIlliquid,
       trendFilter: DEFAULT_CONFIG.trendFilter, earlyEntryOnly: DEFAULT_CONFIG.earlyEntryOnly,
-      simpleView: DEFAULT_CONFIG.simpleView
+      tradeableOnly: DEFAULT_CONFIG.tradeableOnly, simpleView: DEFAULT_CONFIG.simpleView
     };
     try {
       var raw = localStorage.getItem('screener_config_sa');
@@ -776,6 +794,7 @@
         hideIlliquid: (typeof saved.hideIlliquid === 'boolean') ? saved.hideIlliquid : DEFAULT_CONFIG.hideIlliquid,
         trendFilter: ['all','up','down','updown'].indexOf(saved.trendFilter) !== -1 ? saved.trendFilter : DEFAULT_CONFIG.trendFilter,
         earlyEntryOnly: (typeof saved.earlyEntryOnly === 'boolean') ? saved.earlyEntryOnly : DEFAULT_CONFIG.earlyEntryOnly,
+        tradeableOnly: (typeof saved.tradeableOnly === 'boolean') ? saved.tradeableOnly : DEFAULT_CONFIG.tradeableOnly,
         simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView
       };
     } catch(e){ return fallback; }
@@ -786,7 +805,7 @@
         mode: state.mode, weightsByMode: state.weightsByMode, pageSize: state.pageSize,
         sortKey: state.sortKey, sortDir: state.sortDir,
         bybitOnly: state.bybitOnly, candleTimeframe: state.candleTimeframe, hideIlliquid: state.hideIlliquid,
-        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, simpleView: state.simpleView
+        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, simpleView: state.simpleView
       }));
       flashSaved();
     } catch(e){}
@@ -923,6 +942,71 @@
     return {score:score, label:label};
   }
 
+  // ---------- Tradeable tier: "would a professional actually put money on this today?" ----------
+  // A deliberately higher bar than the Setup/coil checklist, which only describes SHAPE. This adds
+  // the things that decide whether a shape is worth risking capital on: macro backdrop, a stop you
+  // can actually size around, reward that justifies that stop, real participation, real liquidity,
+  // and enough independence from BTC that it's a position rather than a BTC proxy.
+  var TRADEABLE = {
+    maxRiskPct:     8,      // structural stop within 8% -- beyond this, sizing/slippage kill the edge
+    minRR:          2,      // measured move (range height) must be >= 2x the risk taken
+    minVolDryUp:    1.2,    // still coiling: last completed bar <= 1.2x avg -- quiet coil, not churn
+    minVolExpand:   1.3,    // already triggered: last completed bar >= 1.3x avg -- real participation
+    minDollarVol:   5e6,    // $5M/24h floor -- below this the spread eats a breakout move
+    minMarketCap:   20e6,   // $20M floor -- micro caps distort every technical read
+    maxBtcCorr:     0.85    // above this it's leveraged BTC, not an independent trade
+  };
+  function evaluateTradeable(r, effTrend){
+    if (r.distStatus !== 'ok') return {ok:null, reasons:[]};
+    var why = [];
+
+    // --- Structure: either a valid coil, or a breakout that's still young and holding ---
+    var bs = r.breakoutStatus;
+    var freshBreak = !!(bs && (bs.phase === 'fresh' || bs.phase === 'confirming'));
+    var structureOk = (r.validEarlyEntry === true) || freshBreak;
+    if (!structureOk) why.push('no valid coil or live breakout');
+    if (bs && bs.phase === 'failed') why.push('last breakout failed');
+    if (bs && bs.phase === 'extended') why.push('breakout already extended');
+
+    // --- Macro: the regime badge is a hard gate here, not a score discount ---
+    if (state.regime.verdict !== 'TRADE') why.push('regime ' + (state.regime.verdict || 'unresolved'));
+
+    // --- Trend: genuinely up, not merely "not down" ---
+    if (effTrend !== 'up') why.push('trend ' + (effTrend || 'n/a') + ', not up');
+    if (r.trendAgree !== 'agree') why.push('timeframes not aligned');
+
+    // --- Risk & reward: ATR-based stop, measured-move target (range height projected) ---
+    var riskPct = null, rrRatio = null;
+    if (r.atr14 != null && r.price > 0){
+      riskPct = (1.5 * r.atr14 / r.price) * 100;   // 1.5 ATR below entry -- standard structural stop
+      if (riskPct > TRADEABLE.maxRiskPct) why.push('stop ' + riskPct.toFixed(1) + '% away');
+      if (r.donchWidthPct != null && riskPct > 0){
+        rrRatio = r.donchWidthPct / riskPct;
+        if (rrRatio < TRADEABLE.minRR) why.push('R:R ' + rrRatio.toFixed(1) + ' below 2');
+      } else { why.push('no measurable target'); }
+    } else { why.push('no ATR'); }
+
+    // --- Participation: dry-up while coiling, expansion once triggered (opposite tests) ---
+    var vs = r.volSurgePrev;
+    if (vs == null) why.push('no volume read');
+    else if (freshBreak && vs < TRADEABLE.minVolExpand) why.push('breakout on thin volume (' + vs.toFixed(1) + 'x)');
+    else if (!freshBreak && vs > TRADEABLE.minVolDryUp) why.push('coil churning (' + vs.toFixed(1) + 'x), not drying up');
+
+    // --- Liquidity: can this actually be executed at size without slipping ---
+    // These fail CLOSED: unverifiable liquidity blocks the trade rather than waving it through.
+    // The messages distinguish "unknown" from "too small" -- claiming a number that was never
+    // fetched would be worse than useless on a screen you size positions from.
+    if (r.totalVolume == null) why.push('24h volume unknown');
+    else if (r.totalVolume < TRADEABLE.minDollarVol) why.push('24h volume ' + fmtUsd(r.totalVolume,{compact:true}) + ' (under $5M)');
+    if (r.marketCap == null) why.push('market cap unknown');
+    else if (r.marketCap < TRADEABLE.minMarketCap) why.push('market cap ' + fmtUsd(r.marketCap,{compact:true}) + ' (under $20M)');
+
+    // --- Independence: don't stack four copies of the same BTC bet ---
+    if (r.btcCorr != null && Math.abs(r.btcCorr) > TRADEABLE.maxBtcCorr) why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + ')');
+
+    return {ok: why.length === 0, reasons: why, riskPct: riskPct, rrRatio: rrRatio};
+  }
+
   function computeRows(){
     var btc = state.tickers['BTC'];
     var btcMom = btc ? btc.mom : 0;
@@ -977,6 +1061,9 @@
         donchWidthPct: ok ? candle.donchWidthPct : null,
         channelPosPct: ok ? candle.channelPosPct : null,
         breakoutStatus: ok ? candle.breakoutStatus : null,
+        atr14: ok ? candle.atr14 : null,
+        volSurgePrev: ok ? candle.volSurgePrev : null,
+        totalVolume: mc ? mc.totalVolume : null,
         isIlliquid: ok ? candle.isIlliquid : false,
         zeroVolBars: ok ? candle.zeroVolBars : null,
         distStatus: candle ? candle.status : 'idle',
@@ -1039,6 +1126,13 @@
         lastRow.validEarlyEntry = null; // still loading -- not yet decided, not a fail
         lastRow.validAccEntry = null;
       }
+      // Tradeable runs AFTER validEarlyEntry/breakoutStatus are set -- it consumes both.
+      var tr = evaluateTradeable(lastRow, effTrend);
+      lastRow.tradeable = tr.ok;
+      lastRow.tradeReasons = tr.reasons;
+      lastRow.tradeRiskPct = tr.riskPct;
+      lastRow.tradeRR = tr.rrRatio;
+
       var opp = computeOpportunity(lastRow, effTrend);
       lastRow.opportunityScore = opp.score;
       lastRow.opportunityLabel = opp.label;
@@ -1071,6 +1165,11 @@
       // Uses whichever gate matches the active tab -- the pre-breakout coil checklist on
       // Breakout, the deep-discount-base checklist on Accumulation.
       rows = rows.filter(function(r){ return r.simpleValidEntry !== false; });
+    }
+    if (state.tradeableOnly){
+      // Breakout-tab concept only; on Accumulation it would gate a base against breakout criteria.
+      // Unresolved (null) rows stay visible so the page keeps fetching what it needs, same as above.
+      rows = rows.filter(function(r){ return state.mode === 'accumulation' || r.tradeable !== false; });
     }
     if (state.search){
       var q = state.search.toUpperCase();
@@ -1196,7 +1295,7 @@
   var visibleForCandles = [];
 
   function renderMessage(html){
-    tbody.innerHTML = '<tr><td colspan="20" class="empty">' + html + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="21" class="empty">' + html + '</td></tr>';
     footNote.textContent = '';
   }
 
@@ -1219,7 +1318,7 @@
     }
 
     if (!shown.length){
-      tbody.innerHTML = '<tr><td colspan="20" class="empty">No coins match. Try clearing the search box.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="21" class="empty">No coins match. Try clearing the search box.</td></tr>';
       footNote.textContent = '';
       return;
     }
@@ -1580,6 +1679,26 @@
           tdBreakout.innerHTML = '<span class="spin" title="Scanning breakout history…"></span>';
         }
         tr.appendChild(tdBreakout);
+
+        var tdTradeable = document.createElement('td');
+        if (r.distStatus === 'ok'){
+          if (r.tradeable === true){
+            var rrTxt = r.tradeRR != null ? ('R:R ' + r.tradeRR.toFixed(1)) : 'R:R n/a';
+            var riskTxt = r.tradeRiskPct != null ? (r.tradeRiskPct.toFixed(1) + '% risk') : '';
+            tdTradeable.innerHTML = '<span class="pill pos" title="Passes every Tradeable check: valid structure, regime TRADE, trend up, timeframes aligned, stop within 8%, R:R >= 2, volume appropriate for its phase, liquid, and not a BTC proxy.">✅ ' + rrTxt + '</span>'
+              + '<div class="watch-level">' + riskTxt + '</div>';
+          } else {
+            var blocked = (r.tradeReasons && r.tradeReasons.length)
+              ? 'Blocked by: ' + r.tradeReasons.join('; ')
+              : 'Did not pass the Tradeable checks';
+            tdTradeable.innerHTML = '<span class="muted" title="' + blocked.replace(/"/g,'&quot;') + '">—</span>';
+          }
+        } else if (r.distStatus === 'error'){
+          tdTradeable.innerHTML = '<span class="muted">n/a</span>';
+        } else {
+          tdTradeable.innerHTML = '<span class="spin" title="Evaluating tradeability…"></span>';
+        }
+        tr.appendChild(tdTradeable);
       }
 
       var tdRead = document.createElement('td');
@@ -1627,6 +1746,12 @@
   document.getElementById('candleTimeframe').value = state.candleTimeframe;
   document.getElementById('trendFilter').value = state.trendFilter;
   document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
+  document.getElementById('tradeableOnly').checked = state.tradeableOnly;
+  document.getElementById('tradeableOnly').addEventListener('change', function(e){
+    state.tradeableOnly = e.target.checked;
+    saveConfig();
+    render();
+  });
   document.getElementById('simpleView').checked = state.simpleView;
   function applyViewVisibility(){
     document.getElementById('advancedControls').style.display = state.simpleView ? 'none' : 'contents';
@@ -1821,6 +1946,7 @@
     state.hideIlliquid = DEFAULT_CONFIG.hideIlliquid;
     state.trendFilter = DEFAULT_CONFIG.trendFilter;
     state.earlyEntryOnly = DEFAULT_CONFIG.earlyEntryOnly;
+    state.tradeableOnly = DEFAULT_CONFIG.tradeableOnly;
     state.candles = {};
     state.candlesAlt = {};
     renderWeightsUI();
@@ -1828,6 +1954,7 @@
     document.getElementById('bybitOnly').checked = state.bybitOnly;
     document.getElementById('hideIlliquid').checked = state.hideIlliquid;
     document.getElementById('earlyEntryOnly').checked = state.earlyEntryOnly;
+    document.getElementById('tradeableOnly').checked = state.tradeableOnly;
     document.getElementById('candleTimeframe').value = state.candleTimeframe;
     document.getElementById('trendFilter').value = state.trendFilter;
     localStorage.removeItem('screener_config_sa');
@@ -2096,13 +2223,35 @@
     var channelPosPct = (donchHigh20 != null && donchLow20 != null && donchHigh20 > donchLow20)
       ? ((last - donchLow20) / (donchHigh20 - donchLow20)) * 100 : null;
     var breakoutStatus = computeBreakoutStatus(bars);
+    // ATR(14), simple average of True Range. Feeds the Tradeable tier's structural stop, so the
+    // risk distance is volatility-based rather than an arbitrary percentage.
+    var atr14 = null;
+    if (bars.length >= 15){
+      var trSum = 0;
+      for (var a=0; a<14; a++){
+        var h = parseFloat(bars[a].high), l = parseFloat(bars[a].low), pc = parseFloat(bars[a+1].close);
+        trSum += Math.max(h-l, Math.abs(h-pc), Math.abs(l-pc));
+      }
+      atr14 = trSum/14;
+    }
+    // Participation measured on the last COMPLETED bar, not bars[0]. The current bar is still
+    // forming -- an early-in-the-day Daily bar always looks quiet, which would make any volume
+    // test read "dry-up" for the first hours of every day and "expansion" almost never.
+    var volSurgePrev = null;
+    if (bars.length >= 16){
+      var prevVolUsd = parseFloat(bars[1].volume_usd);
+      var volBase = bars.slice(2, 16);
+      var avgPrevVol = volBase.reduce(function(s,b){ return s + parseFloat(b.volume_usd); }, 0) / volBase.length;
+      volSurgePrev = avgPrevVol > 0 ? (prevVolUsd / avgPrevVol) : null;
+    }
     var recentBars = bars.slice(0, 10);
     var zeroVolBars = recentBars.filter(function(b){ return parseFloat(b.volume) === 0; }).length;
     var isIlliquid = recentBars.length >= 5 && zeroVolBars >= 3;
     return {
-      status:'ok', high50:high, distPct:distPct, volSurge:volSurge,
-      low50:low, distFromLowPct:distFromLowPct, volatilityRatio:volatilityRatio, rsi14:rsi14,
+      status:'ok', high50:high, distPct:distPct, volSurge:volSurge, volSurgePrev:volSurgePrev,
+      low50:low, distFromLowPct:distFromLowPct, volatilityRatio:volatilityRatio, rsi14:rsi14, atr14:atr14,
       trend:trend, trend200:trend200, donchDistPct:donchDistPct, donchDistLowPct:donchDistLowPct, donchWidthPct:donchWidthPct,
+      donchHigh20:donchHigh20, donchLow20:donchLow20,
       channelPosPct:channelPosPct, breakoutStatus:breakoutStatus, isIlliquid:isIlliquid, zeroVolBars:zeroVolBars, btcCorr:btcCorr
     };
   }

@@ -1034,6 +1034,11 @@
     }
     var reducedSize = cautionOk;
     var domDriven = cautionOk && state.regime.btcDDirection === 'rising';
+    // Dominance unmeasured (CoinGecko rate-limited) is handled as if it were rising: the strict
+    // correlation cap applies. Otherwise an outage would quietly get the LOOSER cap than a
+    // measured headwind -- missing data earning more permission than bad data.
+    var domUnknown = cautionOk && state.regime.btcDDirection == null;
+    var strictCorr = domDriven || domUnknown;
 
     // --- Trend: genuinely up, not merely "not down" ---
     if (effTrend !== 'up') why.push('trend ' + (effTrend || 'n/a') + ', not up');
@@ -1066,13 +1071,15 @@
     else if (r.marketCap < TRADEABLE.minMarketCap) why.push('market cap ' + fmtUsd(r.marketCap,{compact:true}) + ' (under $20M)');
 
     // --- Independence: don't stack four copies of the same BTC bet ---
-    var corrCap = domDriven ? TRADEABLE.cautionBtcCorr : TRADEABLE.maxBtcCorr;
+    var corrCap = strictCorr ? TRADEABLE.cautionBtcCorr : TRADEABLE.maxBtcCorr;
     if (r.btcCorr != null && Math.abs(r.btcCorr) > corrCap){
-      why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + (domDriven ? ', cap ' + corrCap + ' while dominance rises' : '') + ')');
+      why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) +
+        (domDriven ? ', cap ' + corrCap + ' while dominance rises'
+          : (domUnknown ? ', cap ' + corrCap + ' while dominance is unmeasured' : '')) + ')');
     }
 
     return {ok: why.length === 0, reasons: why, riskPct: riskPct, rrRatio: rrRatio,
-            reducedSize: reducedSize, domDriven: domDriven};
+            reducedSize: reducedSize, domDriven: domDriven, domUnknown: domUnknown};
   }
 
   // Accumulation's equivalent of Tradeable. Deliberately does NOT require regime = TRADE the way
@@ -1123,7 +1130,11 @@
         // Qualifies only because CAUTION was allowed -- say so, and say what to do about it.
         var cause = r.tradeDomDriven
           ? 'BTC dominance rising, so alts face a headwind'
-          : 'BTC trend unclear';
+          : (r.tradeDomUnknown
+            ? (state.regime.btcTrend === 'up'
+              ? 'BTC dominance can\'t be measured right now (market data delayed)'
+              : 'BTC trend unclear and dominance can\'t be measured right now')
+            : 'BTC trend unclear');
         return {rank:3, label:'🟡 Ready · half size', cls:'watch',
           action:'Setup is clean but ' + cause + ' — half size; ' + base};
       }
@@ -1276,6 +1287,7 @@
       lastRow.tradeRR = tr.rrRatio;
       lastRow.tradeReduced = tr.reducedSize;
       lastRow.tradeDomDriven = tr.domDriven;
+      lastRow.tradeDomUnknown = tr.domUnknown;
 
       var atr = evaluateAccTradeable(lastRow, effTrend);
       lastRow.accTradeable = atr.ok;
@@ -1914,7 +1926,7 @@
       setCgKey(e.target.value);
       paint();
       // Re-pull everything CoinGecko-derived with the new key rather than waiting 5 minutes.
-      loadMarketCaps().then(function(){ return loadRegime(); }).then(render).catch(function(){});
+      loadMarketCaps({force:true}).then(function(){ return loadRegime(); }).then(render).catch(function(){});
     });
   })();
 
@@ -2708,21 +2720,58 @@
 
   var COINGECKO_PAGES = 4; // 4 x 250 = top 1000 coins by market cap
   var COINGECKO_PCT_WINDOWS = '1h,24h,7d,14d,30d,200d,1y';
-  function loadMarketCaps(){
-    var promises = [];
-    for (var p = 1; p <= COINGECKO_PAGES; p++){
-      promises.push(
-        fetchJson(cgUrl('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=' + p + '&sparkline=false&price_change_percentage=' + COINGECKO_PCT_WINDOWS))
-          .catch(function(){ return []; })
-      );
+  // Keyless CoinGecko allows only a handful of calls a minute, so every call saved matters.
+  //  - Cache: a reload within 5 minutes reuses the last complete load instead of refetching.
+  //  - Keep: a failed page never wipes data that was already good (it used to replace
+  //    everything with {} -- every coin flipped to "market cap unknown" on one 429).
+  //  - Retry: failed pages are refetched after 60s, alone, instead of waiting the full 5 min.
+  // One self-rescheduling timer instead of setInterval, so retries and refreshes can't stack.
+  var MCAP_CACHE_KEY = 'screener_mcap_cache_sa';
+  var CG_REFRESH_MS = 300000;
+  var CG_RETRY_MS = 60000;
+  var mcapTimer = null;
+  function scheduleMarketCaps(ms, pages){
+    clearTimeout(mcapTimer);
+    mcapTimer = setTimeout(function(){ loadMarketCaps({force:true, pages:pages}); }, ms);
+  }
+  function readMcapCache(){
+    try {
+      var o = JSON.parse(localStorage.getItem(MCAP_CACHE_KEY) || 'null');
+      if (o && o.at && o.caps && (Date.now() - o.at) < CG_REFRESH_MS) return o;
+    } catch(e){}
+    return null;
+  }
+  function writeMcapCache(caps){
+    try { localStorage.setItem(MCAP_CACHE_KEY, JSON.stringify({at: Date.now(), caps: caps})); } catch(e){}
+  }
+  function loadMarketCaps(opts){
+    opts = opts || {};
+    if (!opts.force){
+      var cached = readMcapCache();
+      if (cached){
+        state.marketCaps = cached.caps;
+        render();
+        scheduleMarketCaps(CG_REFRESH_MS - (Date.now() - cached.at));
+        return Promise.resolve({complete:true, fromCache:true});
+      }
     }
+    var pageNums = opts.pages || [];
+    if (!pageNums.length) for (var p = 1; p <= COINGECKO_PAGES; p++) pageNums.push(p);
+    var promises = pageNums.map(function(p){
+      return fetchJson(cgUrl('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=' + p + '&sparkline=false&price_change_percentage=' + COINGECKO_PCT_WINDOWS))
+        .then(function(list){ return Array.isArray(list) ? list : null; })
+        .catch(function(){ return null; });
+    });
     return Promise.all(promises).then(function(pages){
       var caps = {};
-      pages.forEach(function(list){
-        (list || []).forEach(function(coin){
+      var failed = [];
+      pages.forEach(function(list, i){
+        if (!list){ failed.push(pageNums[i]); return; }
+        list.forEach(function(coin){
           var sym = (coin.symbol || '').toUpperCase();
           if (!sym || caps.hasOwnProperty(sym)) return; // first occurrence = highest market cap (list is market_cap_desc)
           caps[sym] = {
+            id: coin.id,
             marketCap: coin.market_cap,
             totalVolume: coin.total_volume,
             fdv: coin.fully_diluted_valuation,
@@ -2741,9 +2790,37 @@
           };
         });
       });
-      state.marketCaps = caps;
+      var fullSet = !opts.pages && failed.length === 0;
+      if (fullSet){
+        // Complete fresh load: replace outright, so coins that dropped out of the top 1000 go.
+        state.marketCaps = caps;
+      } else if (failed.length < pageNums.length){
+        // Partial load (or a retry of just the failed pages): merge over what we already have.
+        // A ticker symbol can belong to two coins; a fresh entry replaces an old one only if
+        // it is the same coin, or ranks higher -- the same "highest cap wins" rule as above.
+        var merged = Object.assign({}, state.marketCaps);
+        Object.keys(caps).forEach(function(sym){
+          var old = merged[sym], neu = caps[sym];
+          if (!old || !old.id || old.id === neu.id || (neu.rank != null && (old.rank == null || neu.rank < old.rank))){
+            merged[sym] = neu;
+          }
+        });
+        state.marketCaps = merged;
+      }
+      // else: every page failed -- keep existing data untouched.
+      if (failed.length === 0){
+        writeMcapCache(state.marketCaps);
+        scheduleMarketCaps(CG_REFRESH_MS);
+      } else {
+        scheduleMarketCaps(CG_RETRY_MS, failed);
+      }
       render();
-    }).catch(function(){ /* market cap is supplementary -- screener still works without it */ });
+      return {complete: failed.length === 0, fromCache:false};
+    }).catch(function(){
+      /* market cap is supplementary -- screener still works without it */
+      scheduleMarketCaps(CG_RETRY_MS, opts.pages);
+      return {complete:false, fromCache:false};
+    });
   }
 
   // ---------- regime: is the macro backdrop even long-friendly? ----------
@@ -2758,7 +2835,28 @@
     el.title = state.regime.reason;
   }
 
+  // Same self-rescheduling pattern as market caps. A regime that couldn't measure BTC's trend
+  // or dominance retries after 60s rather than sitting on CAUTION-by-missing-data for 5 minutes.
+  // Concurrent callers share the in-flight run instead of spending CoinGecko calls twice.
+  var regimeTimer = null, regimeInFlight = null, regimeCompleted = false;
+  function scheduleRegime(ms){
+    clearTimeout(regimeTimer);
+    regimeTimer = setTimeout(loadRegime, ms);
+  }
   function loadRegime(){
+    if (regimeInFlight) return regimeInFlight;
+    regimeInFlight = runRegime().then(function(){
+      var measured = state.regime.btcTrend != null && state.regime.btcDDirection != null;
+      scheduleRegime(measured ? CG_REFRESH_MS : CG_RETRY_MS);
+    }, function(){
+      scheduleRegime(CG_RETRY_MS);
+    }).then(function(){
+      regimeCompleted = true;
+      regimeInFlight = null;
+    });
+    return regimeInFlight;
+  }
+  function runRegime(){
     var btcRec = state.byBase['BTC'];
     var btcSymbol = btcRec ? btcRec.symbol : 'BTC_USD';
     // BTC's own market-cap change is fetched directly rather than read out of state.marketCaps.
@@ -2896,11 +2994,14 @@
     // It used to be fired standalone while loadRegime ran in the chain above, so regime almost
     // always read an empty marketCaps and reported dominance as unmeasurable -- on EVERY fresh
     // load, until the 5-minute interval happened to re-run it. Recompute as soon as caps land.
-    loadMarketCaps().then(function(){ return loadRegime(); }).catch(function(){});
+    // Only re-run when a regime has already COMPLETED without a dominance reading: if it is still
+    // pending or in flight, that run reads the caps itself, and a measured reading needs no redo.
+    // Market caps and regime then keep themselves fresh (5 min, or 60s after a failure).
+    loadMarketCaps().then(function(){
+      if (regimeCompleted && !regimeInFlight && state.regime.btcDDirection == null) return loadRegime();
+    }).catch(function(){});
 
     setInterval(fetchTickersOnce, 30000);
-    setInterval(loadMarketCaps, 300000); // market cap moves slowly -- refresh every 5 min
-    setInterval(loadRegime, 300000); // regime is macro/daily -- doesn't need to be checked often
     setInterval(loadBtcSeries, 300000);
   }
 

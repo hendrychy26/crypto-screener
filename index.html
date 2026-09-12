@@ -136,8 +136,11 @@
     font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
     color:var(--positive);margin-bottom:6px;
   }
-  .alert-row{font-size:13px;color:var(--text);padding:3px 0;}
+  .alert-row{font-size:13px;color:var(--text);padding:4px 0;}
   .alert-row .muted{font-size:11px;}
+  .alert-verdict{margin:2px 0 2px 2px;}
+  .alert-verdict .pill{font-size:11.5px;}
+  .alert-foot{font-size:11px;color:var(--text-dim);margin-top:8px;padding-top:7px;border-top:1px solid var(--line);}
   /* Tap target sized for a thumb: this strip is read on a phone, mid-move. */
   a.alert-link{
     display:inline-flex;align-items:center;gap:5px;padding:3px 6px;margin:-3px -2px -3px -6px;
@@ -1382,6 +1385,10 @@
       lastRow.simpleOpportunityLabel = state.mode === 'accumulation' ? lastRow.accOpportunityLabel : lastRow.opportunityLabel;
       lastRow.simpleValidEntry = state.mode === 'accumulation' ? lastRow.validAccEntry : lastRow.validEarlyEntry;
     });
+    // Lookup by ticker, built BEFORE the filters below: the alert strip has to be able to show
+    // the status of a coin you have filtered out of the table (Bybit-only, search, Top N).
+    rowIndex = {};
+    rows.forEach(function(r){ rowIndex[r.base] = r; });
     if (state.bybitOnly){
       rows = rows.filter(function(r){ return state.bybitBases.has(r.base); });
     }
@@ -1536,6 +1543,8 @@
     tbody.innerHTML = '<tr><td colspan="21" class="empty">' + html + '</td></tr>';
     footNote.textContent = '';
   }
+
+  var rowIndex = {};   // base -> current row, refreshed every computeRows()
 
   function render(){
     var allRows = computeRows();
@@ -1978,6 +1987,10 @@
 
     footNote.textContent = 'Showing ' + shown.length + ' of ' + allRows.length + ' filtered coins' +
       (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '.';
+
+    // Re-run so each alert's Tradeable badge tracks the fresh evaluation rather than freezing at
+    // whatever was true when the alert fired.
+    renderAlertStrip();
   }
 
   document.getElementById('hiddenToggle').addEventListener('click', function(){
@@ -2773,6 +2786,33 @@
     } catch(e){}
   }
 
+  // "Confirming" says the breakout survived a retest. It says nothing about whether the trade is
+  // worth taking -- most confirming coins fail the Tradeable checks on risk, R:R, volume or
+  // liquidity. Showing the phase without the verdict invites treating every alert as a signal.
+  // Deliberately evaluated at RENDER time, not at alert time: this is the coin's status NOW, and
+  // a coin that qualified when it fired can fail minutes later (it runs away from its trigger,
+  // volume dies, the regime flips). An alert is a timestamp; tradeability is a live reading.
+  function alertTradeChip(base){
+    var r = rowIndex[base];
+    if (!r || r.distStatus !== 'ok' || r.tradeable == null){
+      return '<span class="pill flat" title="Candles for this coin have not been re-read yet, so its checks are not resolved right now.">checking…</span>';
+    }
+    if (r.tradeable === true){
+      var bits = [];
+      if (r.tradeRR != null) bits.push('R:R ' + r.tradeRR.toFixed(1));
+      if (r.tradeRiskPct != null) bits.push('risk ' + r.tradeRiskPct.toFixed(1) + '%');
+      var suffix = bits.length ? ' · ' + bits.join(' · ') : '';
+      if (r.tradeReduced === true){
+        return '<span class="pill watch" title="Passes every Tradeable check, but only because 🟡 CAUTION is allowed — half size.">🟡 Tradeable · half size' + suffix + '</span>';
+      }
+      return '<span class="pill pos" title="Passes every Tradeable check: structure, regime, trend, timeframes, stop distance, R:R, volume, liquidity, and not a BTC proxy.">✅ Tradeable' + suffix + '</span>';
+    }
+    var reasons = r.tradeReasons || [];
+    var first = reasons.length ? reasons[0] : 'did not pass the checks';
+    var all = reasons.length ? 'Blocked by: ' + reasons.join('; ') : 'Did not pass the Tradeable checks';
+    return '<span class="pill neg" title="' + escapeHtml(all) + '">⚠️ Not tradeable — ' + escapeHtml(first) + '</span>';
+  }
+
   function renderAlertStrip(){
     var el = document.getElementById('alertStrip');
     if (!el) return;
@@ -2787,8 +2827,10 @@
                + ' title="Open ' + escapeHtml(a.base) + 'USDT.P on Bybit (TradingView)">'
                + '<span class="chart-ico">◪</span><strong>' + escapeHtml(a.base) + '</strong></a> '
                + escapeHtml(a.text.replace(a.base + ' — ', ''))
-               + ' <span class="muted">' + timeAgo(a.at) + '</span></div>';
-        }).join('');
+               + ' <span class="muted">' + timeAgo(a.at) + '</span>'
+               + '<div class="alert-verdict">' + alertTradeChip(a.base) + '</div></div>';
+        }).join('')
+      + '<div class="alert-foot">Confirming = the breakout held. The badge is each coin’s Tradeable status <em>right now</em>, not when it alerted — most confirming breakouts fail at least one check.</div>';
     var cb = document.getElementById('alertClear');
     if (cb) cb.addEventListener('click', function(){ alertLog = []; renderAlertStrip(); });
   }

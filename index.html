@@ -112,7 +112,7 @@
   .status-feed .sf-name{font-weight:600;min-width:112px;}
   .status-feed .sf-state{font-weight:600;font-size:12px;}
   .status-feed .sf-state.ok{color:var(--positive);}
-  .status-feed .sf-state.stale{color:var(--accent);}
+  .status-feed .sf-state.stale, .status-feed .sf-state.partial{color:var(--accent);}
   .status-feed .sf-state.down{color:var(--negative);}
   .status-feed .sf-state.pending{color:var(--text-faint);}
   .status-feed .sf-note{color:var(--text-dim);font-size:12px;flex:1 1 190px;}
@@ -2766,10 +2766,14 @@
   ];
   var health = {};
   FEEDS.forEach(function(f){ health[f.key] = {lastOk:null, lastErr:null, note:'', errMsg:''}; });
+  // ok: true (complete), 'partial' (answered, but the data is incomplete -- a rate-limited page
+  // of market caps, or a regime computed from a fallback), or false (failed). "Partial" has to
+  // be its own state: a screen showing 249 of ~1000 market caps is not "working", because every
+  // coin missing a cap is silently blocked from Ready by the liquidity gate.
   function markHealth(key, ok, note, errMsg){
     var h = health[key];
     if (!h) return;
-    if (ok){ h.lastOk = Date.now(); h.errMsg = ''; }
+    if (ok){ h.lastOk = Date.now(); h.errMsg = ''; h.degraded = (ok === 'partial'); }
     else { h.lastErr = Date.now(); if (errMsg) h.errMsg = errMsg; }
     if (note != null) h.note = note;
     // Every health change moves the headline too -- otherwise the dot could read "live" while
@@ -2783,9 +2787,9 @@
     if (!h.lastOk) return h.lastErr ? 'down' : 'pending';
     if (h.lastErr && h.lastErr > h.lastOk) return 'down';
     if (f.stale && (now - h.lastOk) > f.stale) return 'stale';
-    return 'ok';
+    return h.degraded ? 'partial' : 'ok';
   }
-  var STATE_WORD = {ok:'working', stale:'stale', down:'failing', pending:'loading…'};
+  var STATE_WORD = {ok:'working', partial:'partial', stale:'stale', down:'failing', pending:'loading…'};
 
   function overallStatus(){
     var worst = 'ok', anyPending = false;
@@ -2794,13 +2798,17 @@
       var s = feedState(f);
       if (s === 'pending') anyPending = true;
       else if (s === 'down') worst = 'down';
-      else if (s === 'stale' && worst !== 'down') worst = 'stale';
+      else if ((s === 'stale' || s === 'partial') && worst !== 'down') worst = 'stale';
     });
     if (worst === 'down') return {kind:'down', text:'data problem'};
     if (worst === 'stale') return {kind:'stale', text:'data stale'};
     if (anyPending) return {kind:'pending', text:'connecting…'};
-    // Degraded = everything critical is live, but a supporting feed (caps/regime) is not.
-    var degraded = FEEDS.some(function(f){ return !f.critical && (feedState(f) === 'down' || feedState(f) === 'stale'); });
+    // Degraded = everything critical is live, but a supporting feed (caps/regime) is incomplete,
+    // stale or failing. That still changes verdicts, so it must not read as a clean "live".
+    var degraded = FEEDS.some(function(f){
+      var s = feedState(f);
+      return !f.critical && (s === 'down' || s === 'stale' || s === 'partial');
+    });
     return degraded ? {kind:'stale', text:'live · partial'} : {kind:'live', text:'live'};
   }
   function refreshStatusIndicator(){
@@ -2824,7 +2832,7 @@
       else bits.push('no data yet');
       if (f.every) bits.push('refreshes every ' + (f.every >= 60000 ? Math.round(f.every/60000) + ' min' : Math.round(f.every/1000) + 's'));
       if (h.note) bits.push(h.note);
-      if (s === 'down' && h.errMsg) bits.push('last error: ' + h.errMsg);
+      if ((s === 'down' || s === 'partial') && h.errMsg) bits.push('last error: ' + h.errMsg);
       return '<div class="status-feed">'
         + '<span class="sf-name">' + f.name + '</span>'
         + '<span class="sf-state ' + s + '">' + STATE_WORD[s] + '</span>'
@@ -2835,10 +2843,10 @@
     el.innerHTML = '<h3>Data feed status</h3>'
       + '<div class="status-sub"><strong>' + (o.kind === 'live' ? 'Everything is working and live.'
           : (o.kind === 'pending' ? 'Still loading.'
-          : (o.kind === 'stale' ? 'Working, but some data is older than it should be — treat verdicts as unconfirmed until it clears.'
+          : (o.kind === 'stale' ? 'Usable, but incomplete or older than it should be — check the amber rows below before trading off a verdict.'
           : 'Something is not working. Rows may be missing data, and verdicts can be wrong.'))) + '</strong></div>'
       + rows
-      + '<div class="status-foot">“Working” means that feed answered recently. “Stale” means its last good answer is older than this feed should be, usually CoinGecko rate-limiting a keyless browser — failed calls retry after 60 seconds on their own. Nothing here is sent anywhere; it is all measured in this browser.</div>';
+      + '<div class="status-foot">“Working” = that feed answered recently and in full. “Partial” = it answered, but with only some of the data — coins with no market cap are held back from Ready by the liquidity gate, so a partial caps load makes the screen stricter, not wrong. “Stale” = its last good answer is older than this feed should be. All of it is usually CoinGecko rate-limiting a keyless browser; failed calls retry after 60 seconds on their own, and a key in the filters panel removes most of it. Nothing here is sent anywhere; it is all measured in this browser.</div>';
   }
   function setStatusPanelOpen(open){
     statusPanelOpen = open;
@@ -2997,6 +3005,7 @@
         // Dated to when the data was actually fetched, not to now -- a reused copy is exactly as
         // old as it is, and the panel would otherwise claim a stale copy was fresh.
         health.marketcaps.lastOk = cached.at;
+        health.marketcaps.degraded = false; // only complete loads are ever cached
         health.marketcaps.note = Object.keys(cached.caps).length + ' coins, reused from this browser\'s saved copy';
         render();
         refreshStatusIndicator();
@@ -3065,9 +3074,10 @@
       } else {
         scheduleMarketCaps(CG_RETRY_MS, failed);
         var msg = failed.length + ' of ' + pageNums.length + ' pages rate-limited, retrying in 60s'
-          + (have ? ' — keeping the ' + have + ' coins already loaded' : '');
-        // Any page that did land is still a real, usable update; only a total failure is "down".
-        markHealth('marketcaps', failed.length < pageNums.length, msg, 'CoinGecko rate limit / network');
+          + (have ? ' — ' + have + ' of ~1000 coins have caps; the rest read "market cap unknown" and are held back from Ready' : '');
+        // Any page that did land is still a real update, but an incomplete one -- 'partial', not
+        // 'working': the coins with no cap are silently blocked by the liquidity gate.
+        markHealth('marketcaps', failed.length < pageNums.length ? 'partial' : false, msg, 'CoinGecko rate limit / network');
       }
       render();
       refreshStatusIndicator();
@@ -3108,8 +3118,9 @@
       scheduleRegime(measured ? CG_REFRESH_MS : CG_RETRY_MS);
       // A regime that resolved without a dominance reading is a real answer, but a degraded one:
       // it lands on CAUTION by missing data, which is not the same as a measured CAUTION.
-      markHealth('regime', measured, measured
+      markHealth('regime', measured ? (state.regime.estimated ? 'partial' : true) : false, measured
         ? state.regime.verdict + ' — BTC trend ' + state.regime.btcTrend + ', dominance ' + state.regime.btcDDirection
+          + (state.regime.estimated ? ' · ' + state.regime.estimated : '')
         : 'CAUTION by missing data — ' + (state.regime.btcTrend == null ? 'BTC trend' : 'dominance')
           + ' could not be measured, retrying in 60s',
         'CoinGecko rate limit / network');
@@ -3142,6 +3153,7 @@
       var btcDirect = (Array.isArray(results[2]) && results[2][0]) ? results[2][0] : null;
       var btcTrend = (btcCandle && btcCandle.status === 'ok') ? (btcCandle.trend200 || btcCandle.trend) : null;
       var btcDDirection = null;
+      var estimated = null;   // set when dominance came from the fallback aggregate, not /global
       var btcMcapChange = btcDirect ? btcDirect.market_cap_change_percentage_24h
         : (state.marketCaps['BTC'] ? state.marketCaps['BTC'].mcapChangePct : null);
       var totalMcapChange = (global && global.data) ? global.data.market_cap_change_percentage_24h_usd : null;
@@ -3172,7 +3184,13 @@
         // measurement -- and it silently drove a "dominance falling / TRADE" verdict at a moment
         // when BTC was measurably outrunning the market. Too few contributors means unmeasurable,
         // which lands on CAUTION, rather than a confident wrong answer.
-        if (wTot > 0 && contributors >= 100) totalMcapChange = wSum / wTot;
+        if (wTot > 0 && contributors >= 100){
+          totalMcapChange = wSum / wTot;
+          // A real reading, but an estimated one: /global measures the whole market, this
+          // measures whatever coins happen to be loaded. Worth saying out loud on a gate that
+          // decides TRADE vs CAUTION.
+          estimated = 'market total estimated from ' + contributors + ' loaded coins (/global unavailable)';
+        }
       }
       if (btcMcapChange != null && totalMcapChange != null){
         // If BTC's own market cap grew faster (or shrank less) than the total market's,
@@ -3209,7 +3227,9 @@
         verdict = 'CAUTION';
         reason = 'Not enough data yet to read BTC\'s trend or dominance direction.';
       }
-      state.regime = { btcTrend: btcTrend, btcDDirection: btcDDirection, verdict: verdict, reason: reason };
+      state.regime = { btcTrend: btcTrend, btcDDirection: btcDDirection, verdict: verdict,
+                       reason: reason + (estimated ? ' (Dominance ' + estimated + '.)' : ''),
+                       estimated: estimated };
       renderRegimeBadge();
     });
   }

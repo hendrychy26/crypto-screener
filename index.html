@@ -128,8 +128,16 @@
     font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
     color:var(--positive);margin-bottom:6px;
   }
-  .alert-row{font-size:13px;color:var(--text);padding:2px 0;}
+  .alert-row{font-size:13px;color:var(--text);padding:3px 0;}
   .alert-row .muted{font-size:11px;}
+  /* Tap target sized for a thumb: this strip is read on a phone, mid-move. */
+  a.alert-link{
+    display:inline-flex;align-items:center;gap:5px;padding:3px 6px;margin:-3px -2px -3px -6px;
+    border-radius:5px;color:var(--text);text-decoration:none;
+  }
+  a.alert-link:hover{background:var(--surface);color:var(--accent);}
+  a.alert-link:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  a.alert-link:hover .chart-ico{color:var(--accent);}
   .mode-tabs{display:flex;gap:6px;margin-bottom:12px;}
   .mode-tab{
     all:unset;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;
@@ -941,6 +949,12 @@
     return Math.round(s/60) + 'm ago';
   }
 
+  // One place that builds the chart link, so the table and the alert strip can never drift onto
+  // different symbols for the same coin.
+  function tvChartUrl(base){
+    return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('BYBIT:' + base + 'USDT.P');
+  }
+
   // Network error text ends up in the status panel; it comes from outside, so never trust it
   // as markup.
   function escapeHtml(s){
@@ -1545,8 +1559,7 @@
       tr.appendChild(tdRank);
 
       var tdSym = document.createElement('td');
-      var tvSymbol = 'BYBIT:' + r.base + 'USDT.P';
-      var tvUrl = 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent(tvSymbol);
+      var tvUrl = tvChartUrl(r.base);
       var symLink = document.createElement('a');
       symLink.className = 'sym-cell sym-link';
       symLink.href = tvUrl;
@@ -2736,7 +2749,13 @@
     el.className = 'alert-strip show';
     el.innerHTML = '<div class="alert-head">✅ Confirming <button class="hidden-link" id="alertClear">clear</button></div>'
       + alertLog.map(function(a){
-          return '<div class="alert-row"><strong>' + a.base + '</strong> ' + a.text.replace(a.base + ' — ', '')
+          // The whole point of this strip is "act on this now", so the coin name opens the chart
+          // straight away -- same Bybit perp link as the table, one tap on mobile.
+          return '<div class="alert-row"><a class="alert-link" href="' + tvChartUrl(a.base) + '"'
+               + ' target="_blank" rel="noopener noreferrer"'
+               + ' title="Open ' + escapeHtml(a.base) + 'USDT.P on Bybit (TradingView)">'
+               + '<span class="chart-ico">◪</span><strong>' + escapeHtml(a.base) + '</strong></a> '
+               + escapeHtml(a.text.replace(a.base + ' — ', ''))
                + ' <span class="muted">' + timeAgo(a.at) + '</span></div>';
         }).join('');
     var cb = document.getElementById('alertClear');

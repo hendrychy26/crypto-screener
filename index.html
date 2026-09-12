@@ -1578,6 +1578,11 @@
     if (state.tradeableOnly){
       // Works on both tabs via the shared verdict: keep only 🟢 Ready, plus anything still
       // loading (rank -1) so the page keeps fetching what it needs to decide.
+      // Snapshot the scan denominator here, while the list still holds every candidate -- after
+      // the filter below, resolved-but-not-ready coins are gone and the total would shrink.
+      scanTotal = rows.length;
+      scanDone = rows.filter(function(r){ return r.distStatus === 'ok' || r.distStatus === 'error'; }).length;
+      allRowsReadyCount = rows.filter(function(r){ return r.verdictRank >= 3; }).length;
       rows = rows.filter(function(r){ return r.verdictRank >= 3 || r.verdictRank === -1 || r.verdictRank == null; });
     }
     if (state.search){
@@ -1709,6 +1714,25 @@
   }
 
   var rowIndex = {};   // base -> current row, refreshed every computeRows()
+
+  // "Ready to trade only" keeps unresolved rows in the list on purpose, so the lazy candle loader
+  // keeps pulling fresh coins into view: as each one resolves and fails, it drops out and the next
+  // unscanned coin takes its place. That churn walks the whole universe -- but with 551 coins it
+  // looks like nothing is happening, and an empty screen is ambiguous between "still scanning" and
+  // "nothing qualifies". This reports which of the two it is.
+  // Counted over the rows that survive every OTHER filter, not over the whole universe: coins
+  // removed by Hide illiquid or the Bybit-perp filter never get candles fetched, so counting them
+  // as "to scan" would leave the progress permanently short of 100% and the completion line
+  // unreachable.
+  var scanTotal = 0, scanDone = 0, allRowsReadyCount = 0;
+  function scanProgressText(){
+    if (!state.tradeableOnly || !scanTotal) return '';
+    if (scanDone >= scanTotal){
+      return ' Scan complete: ' + allRowsReadyCount + ' of ' + scanTotal + ' coins are ready to trade.';
+    }
+    return ' Scanning ' + scanDone + ' of ' + scanTotal + ' coins (' + allRowsReadyCount
+         + ' ready so far) — leave it open, it works through the list.';
+  }
 
   function render(){
     var allRows = computeRows();
@@ -2173,7 +2197,7 @@
     });
 
     footNote.textContent = 'Showing ' + shown.length + ' of ' + allRows.length + ' filtered coins' +
-      (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '.';
+      (hiddenCount ? ' · ' + hiddenCount + ' hidden' : '') + '.' + scanProgressText();
 
     // Re-run so each alert's Tradeable badge tracks the fresh evaluation rather than freezing at
     // whatever was true when the alert fired.

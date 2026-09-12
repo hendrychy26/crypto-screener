@@ -672,7 +672,7 @@
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
         <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system (the Tradeable gate separately scores risk at 1.5×ATR for screening; this setting only drives the calculator). <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
         <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
-        <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
+        <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. The scan runs <strong>4 fetches in parallel</strong> while everything is healthy — one at a time left the connection idle between round trips and made a 50-row page take over a minute; it now takes about 20 seconds — and <strong>collapses to a single lane the moment anything fails</strong>, so the brake and the accelerator are the same lever. Measured with every request failing: 8 attempts in 25 seconds, against hundreds before any backoff existed. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
         <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
         <li><strong>CoinGecko key</strong> (optional, in the filters panel) removes the main source of flakiness in this tool. Without one you share a public IP allowance of roughly 5-15 calls a minute, which a full scan trips constantly — and CoinGecko returns those 429s <em>without CORS headers</em>, so the browser reports them as generic network failures rather than rate limits. That is why market caps sometimes come back blank and the regime reads "unmeasurable". A free demo key from CoinGecko's developer dashboard gives you your own allowance and makes the tool markedly more reliable. <strong>It is stored only in this browser's localStorage and never written into the page</strong>, which matters because this file is served from a public repository — a key committed here would be readable by anyone and your quota would be theirs to spend.</li>
       </ul>
@@ -2873,8 +2873,13 @@
   // error storm (hundreds of console errors) that kept ITSELF rate-limited. Two brakes now:
   //   - a shared cooldown, doubling 5s -> 80s while failures continue, that pauses both queues;
   //   - per-symbol backoff, so a coin that just failed is not retried on the very next render.
-  var CANDLE_GAP_MS = 200;          // primary queue spacing (was 120)
-  var CANDLE_ALT_GAP_MS = 400;      // cross-timeframe queue: strictly lower priority (was 160)
+  var CANDLE_GAP_MS = 120;          // spacing between launches within a lane
+  var CANDLE_ALT_GAP_MS = 300;      // cross-timeframe queue: strictly lower priority
+  var CANDLE_LANES = 4;             // parallel fetches while everything is healthy
+  // The brake and the accelerator are the same lever: any failure drops the scan to a single
+  // lane until a success unwinds the streak, so a rate limit still throttles hard while a
+  // healthy connection is not left idling between round trips.
+  function candleLaneCount(){ return candleFailStreak > 0 ? 1 : CANDLE_LANES; }
   var candleCooldownUntil = 0;
   var candleFailStreak = 0;
   var candleResumeTimer = null;
@@ -2927,10 +2932,22 @@
     });
     if (!todo.length) return;
     candleQueueRunning = true;
-    (function next(i){
-      if (i >= todo.length){ candleQueueRunning = false; return; }
-      if (candlesPaused()){ candleQueueRunning = false; resumeCandlesLater(); return; }
-      var symbol = todo[i];
+    // Several fetches in flight at once. Strictly one-at-a-time made a 50-row page take ~70s of
+    // pure waiting on round trips, with the connection idle between them. Concurrency collapses
+    // to 1 the moment anything fails (candleFailStreak > 0), so the rate-limit brakes still win.
+    var nextIndex = 0, active = 0;
+    function pump(){
+      while (active < candleLaneCount() && nextIndex < todo.length){
+        if (candlesPaused()) break;
+        startOne(todo[nextIndex++]);
+      }
+      if (active === 0){
+        candleQueueRunning = false;
+        if (nextIndex < todo.length) resumeCandlesLater();   // paused mid-batch; finish later
+      }
+    }
+    function startOne(symbol){
+      active++;
       // Only blank the cell if we have nothing to show; a stale refresh keeps the old values
       // visible so the table doesn't flash back to spinners every 10 minutes.
       if (!state.candles[symbol] || state.candles[symbol].status !== 'ok'){
@@ -2968,10 +2985,12 @@
         })
         .then(function(){
           delete candleInFlight[symbol];
+          active--;
           render();
-          setTimeout(function(){ next(i+1); }, CANDLE_GAP_MS);
+          setTimeout(pump, CANDLE_GAP_MS);
         });
-    })(0);
+    }
+    pump();
   }
   function runAltCandleQueue(){
     // Fetches the complementary timeframe (Daily when the primary selector is 4H, or vice
@@ -3416,7 +3435,12 @@
     });
   }
 
-  var COINGECKO_PAGES = 4; // 4 x 250 = top 1000 coins by market cap
+  // 6 x 250 = top 1500 by market cap. Four pages left 129 coins in the universe with no cap at
+  // all -- and a coin with no cap is blocked from Ready by the liquidity gate, which fails
+  // closed. BMT (Bubblemaps) sits at rank 1071, just past where the old cutoff fell, and it was
+  // not alone: extending to 1500 recovers 59 of those 129. The cost is two extra calls per full
+  // refresh, which the 5-minute cache mostly absorbs.
+  var COINGECKO_PAGES = 6;
   var COINGECKO_PCT_WINDOWS = '1h,24h,7d,14d,30d,200d,1y';
   // Keyless CoinGecko allows only a handful of calls a minute, so every call saved matters.
   //  - Cache: a reload within 5 minutes reuses the last complete load instead of refetching.
@@ -3432,6 +3456,30 @@
     clearTimeout(mcapTimer);
     mcapTimer = setTimeout(function(){ loadMarketCaps({force:true, pages:pages}); }, ms);
   }
+  // "The feed answered" and "every coin on screen has a cap" are different claims, and the status
+  // dot was only ever making the first one. A coin outside CoinGecko's top 1500 has no cap at
+  // all, is blocked from Ready by the liquidity gate, and looked identical to a rate-limit
+  // casualty -- which is exactly the confusion a blank Market Cap column creates. So the panel
+  // now states coverage outright instead of leaving it to be inferred from an empty cell.
+  function capsMissingCount(){
+    var caps = state.marketCaps || {};
+    var missing = 0, total = 0;
+    Object.keys(state.byBase).forEach(function(base){
+      total++;
+      if (!caps[base]) missing++;
+    });
+    return {missing: missing, total: total};
+  }
+  function capCoverageNote(have){
+    var c = capsMissingCount();
+    var note = (have != null ? have : Object.keys(state.marketCaps || {}).length) + ' coins loaded';
+    if (c.total && c.missing){
+      note += ' · ' + c.missing + ' of ' + c.total + ' screener coins have no cap (outside CoinGecko\'s top '
+            + (COINGECKO_PAGES * 250) + ') — those are held back from Ready';
+    }
+    return note;
+  }
+
   function readMcapCache(){
     try {
       var o = JSON.parse(localStorage.getItem(MCAP_CACHE_KEY) || 'null');
@@ -3452,7 +3500,7 @@
         // old as it is, and the panel would otherwise claim a stale copy was fresh.
         health.marketcaps.lastOk = cached.at;
         health.marketcaps.degraded = false; // only complete loads are ever cached
-        health.marketcaps.note = Object.keys(cached.caps).length + ' coins, reused from this browser\'s saved copy';
+        health.marketcaps.note = capCoverageNote(Object.keys(cached.caps).length) + ' · reused from this browser\'s saved copy';
         augmentUniverseFromBybit();   // caps are the admission test for Bybit-only coins
         render();
         refreshStatusIndicator();
@@ -3518,11 +3566,12 @@
       if (failed.length === 0){
         writeMcapCache(state.marketCaps);
         scheduleMarketCaps(CG_REFRESH_MS);
-        markHealth('marketcaps', true, have + ' coins');
+        markHealth('marketcaps', true, capCoverageNote(have));
       } else {
         scheduleMarketCaps(CG_RETRY_MS, failed);
         var msg = failed.length + ' of ' + pageNums.length + ' pages rate-limited, retrying in 60s'
-          + (have ? ' — ' + have + ' of ~1000 coins have caps; the rest read "market cap unknown" and are held back from Ready' : '');
+          + (have ? ' — keeping ' + have + ' coins already loaded; ' + capsMissingCount().missing
+                  + ' screener coins read "market cap unknown" and are held back from Ready' : '');
         // Any page that did land is still a real update, but an incomplete one -- 'partial', not
         // 'working': the coins with no cap are silently blocked by the liquidity gate.
         markHealth('marketcaps', failed.length < pageNums.length ? 'partial' : false, msg, 'CoinGecko rate limit / network');
@@ -3768,17 +3817,36 @@
     var jobs = [fetchTickersOnce()];
     scheduleCandleFetch();  // no-ops for candles still inside their TTL
     if (now - (health.btcseries.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadBtcSeries());
-    if (now - (health.marketcaps.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadMarketCaps());
-    if (now - (health.regime.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadRegime());
+
+    // Market caps: the age test alone made this button look broken. Press it because caps are
+    // blank, and if the last load was four minutes ago it did nothing at all -- and if it did
+    // run, the no-force path could hand back the same cached copy. A load that came back
+    // incomplete, or one that failed, now forces a real refetch regardless of age; only a
+    // genuinely complete and fresh load is left alone, which is what protects the quota.
+    // "Did the LAST attempt fail", not "has anything ever failed" -- lastErr is never cleared, so
+    // the sticky form would force a full refetch on every press for the rest of the session,
+    // which is exactly the quota burn this button exists to avoid.
+    var lastAttemptFailed = function(h){ return !!h.lastErr && (!h.lastOk || h.lastErr > h.lastOk); };
+    var capsIncomplete = health.marketcaps.degraded || lastAttemptFailed(health.marketcaps);
+    if (capsIncomplete || now - (health.marketcaps.lastOk || 0) > CG_REFRESH_MS){
+      jobs.push(loadMarketCaps({force: true}));
+    }
+    var regimeIncomplete = health.regime.degraded || lastAttemptFailed(health.regime) || state.regime.btcDDirection == null;
+    if (regimeIncomplete || now - (health.regime.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadRegime());
 
     Promise.all(jobs).catch(function(){}).then(function(){
       document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated);
       refreshStatusIndicator();
-      // Hold the disabled state for the full window: the button going live again is the signal
-      // that pressing it again would actually do something.
+      render();
+      // Say what happened. A silent button that sometimes skips work is indistinguishable from a
+      // broken one -- which is exactly how this read when it declined to refetch caps.
+      if (btn){
+        var c = capsMissingCount();
+        btn.textContent = c.missing ? ('✓ Updated · ' + c.missing + ' without cap') : '✓ Updated';
+      }
       setTimeout(function(){
         if (btn){ btn.disabled = false; btn.textContent = '↻ Refresh now'; }
-      }, Math.max(0, refreshBusyUntil - Date.now()));
+      }, Math.max(1200, refreshBusyUntil - Date.now()));
     });
   }
   (function(){

@@ -95,6 +95,14 @@
   .status-btn .chevron{font-size:8px;margin-left:4px;transition:transform 0.15s ease;}
   .status-btn[aria-expanded="true"] .chevron{transform:rotate(90deg);}
   @media (prefers-reduced-motion: reduce){ .status-btn .chevron{transition:none;} }
+  .refresh-btn{
+    all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--text-dim);
+    padding:4px 9px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);
+  }
+  .refresh-btn:hover{color:var(--text);border-color:var(--text-faint);}
+  .refresh-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .refresh-btn[disabled]{opacity:0.55;cursor:default;}
+
   .status-panel{
     display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;
     padding:12px 14px;margin-bottom:14px;box-shadow:var(--shadow);
@@ -320,6 +328,8 @@
 
   @media (max-width:760px){
     .app{padding:14px 12px 48px;}
+    /* Thumb-sized: this is the one control you press while standing up holding a phone. */
+    .refresh-btn{padding:9px 14px;font-size:12.5px;}
     .weights{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:12px;width:100%;}
     input[type="text"]{width:100%;}
     .controls{padding:12px;gap:12px;}
@@ -432,6 +442,7 @@
       <button class="status-btn" id="statusBtn" type="button" aria-expanded="false" aria-controls="statusPanel" title="Show which data feeds are working"><span class="dot pending" id="statusDot"></span><span id="statusText">connecting…</span><span class="chevron">▶</span></button>
       <span><span class="num" id="universeCount">–</span> coins tracked</span>
       <span>updated <span class="num" id="updatedAt">–</span></span>
+      <button class="refresh-btn" id="refreshBtn" type="button" title="Re-fetch prices now, plus anything that is actually overdue. Far cheaper than reloading the page, which refetches every coin's candles.">↻ Refresh now</button>
       <span id="regimeBadge" class="regime-badge pill flat" title="Reading regime…"><span class="dot2"></span><span id="regimeBadgeText">Reading regime…</span></span>
     </div>
   </div>
@@ -3339,6 +3350,41 @@
   (function(){
     var btn = document.getElementById('statusBtn');
     if (btn) btn.addEventListener('click', function(){ setStatusPanelOpen(!statusPanelOpen); });
+  })();
+
+  // ---------- manual refresh ----------
+  // Reloading the page costs ~100 Crypto.com requests, because every visible row refetches both
+  // of its candle timeframes from scratch -- that is what trips the 429s. This asks only for what
+  // is actually out of date: prices always (one request), candles only past their 10-minute TTL,
+  // and the CoinGecko feeds only when their 5-minute window has elapsed (an under-5-minute market
+  // cap load is reused from cache, costing nothing). Typically 1-3 requests instead of ~100.
+  var refreshBusyUntil = 0;
+  function manualRefresh(){
+    var btn = document.getElementById('refreshBtn');
+    if (Date.now() < refreshBusyUntil) return;
+    refreshBusyUntil = Date.now() + 5000;   // one press does one round; no double-tap storms
+    if (btn){ btn.disabled = true; btn.textContent = '↻ Refreshing…'; }
+
+    var now = Date.now();
+    var jobs = [fetchTickersOnce()];
+    scheduleCandleFetch();  // no-ops for candles still inside their TTL
+    if (now - (health.btcseries.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadBtcSeries());
+    if (now - (health.marketcaps.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadMarketCaps());
+    if (now - (health.regime.lastOk || 0) > CG_REFRESH_MS) jobs.push(loadRegime());
+
+    Promise.all(jobs).catch(function(){}).then(function(){
+      document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated);
+      refreshStatusIndicator();
+      // Hold the disabled state for the full window: the button going live again is the signal
+      // that pressing it again would actually do something.
+      setTimeout(function(){
+        if (btn){ btn.disabled = false; btn.textContent = '↻ Refresh now'; }
+      }, Math.max(0, refreshBusyUntil - Date.now()));
+    });
+  }
+  (function(){
+    var btn = document.getElementById('refreshBtn');
+    if (btn) btn.addEventListener('click', manualRefresh);
   })();
 
   renderHead();

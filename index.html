@@ -499,7 +499,7 @@
           <input type="checkbox" id="bybitOnly" checked>
           <span>Bybit perp only</span>
         </label>
-        <label class="checkbox-field">
+        <label class="checkbox-field" title="Hides coins doing under $1M of 24h volume across all exchanges — genuinely untradeable. Coins that merely have gappy candles on Crypto.com stay visible with a ⚠️ thin-bars warning, because they often trade fine on their Bybit perp.">
           <input type="checkbox" id="hideIlliquid" checked>
           <span>Hide illiquid</span>
         </label>
@@ -632,7 +632,8 @@
         <li><strong>Preset</strong> dropdown gives one-click weight combinations per mode — e.g. Breakout's <span class="num">New ATH Momentum</span> leans hard on ATH proximity plus 7d confirmation, while <span class="num">Fresh Move (early)</span> leans on 24h momentum and Vol/MCap conviction to catch a move before 7d catches up. Dragging any slider by hand switches it to <span class="num">Custom</span> automatically.</li>
         <li><strong>Read</strong> is a plain-language, one-line summary generated entirely from the numbers already in that row — deterministic, no AI call. Hover it for the fuller version, which now includes the 7d %, ATH distance/date, range position, Vol/MCap and FDV/MCap where relevant. <strong>Search also matches Read</strong> — try a phrase like <span class="num">confirming breakout</span>, <span class="num">near ATH</span>, or <span class="num">deep discount</span>.</li>
         <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
-        <li><strong>"Hide illiquid"</strong> drops any coin where 3+ of its last 10 candles had zero trades — thin, barely-traded coins produce stale closes that distort every technical column, Trend especially.</li>
+        <li><strong>"Hide illiquid"</strong> drops coins doing under <span class="num">$1M</span> of 24h volume <em>across all exchanges</em> (CoinGecko) — genuinely untradeable, whatever the chart looks like. If that figure is unavailable it falls back to the empty-bar test below, so a rate-limited load still fails closed.</li>
+        <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the 1.5×ATR stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
         <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
         <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
@@ -1179,14 +1180,64 @@
     return {ok: why.length === 0, reasons: why, riskPct: riskPct};
   }
 
+  // ---------- liquidity vs. data quality: two different questions ----------
+  // These used to be one flag, and that was wrong in a way that cost visibility exactly where it
+  // mattered. "3+ of the last 10 bars had no trades" was read as "this coin barely trades", then
+  // used to hide the row AND to force a 🔴 Avoid verdict. But an empty bar means no trades on
+  // Crypto.com spot in that window -- not that the coin is untradeable. Switch to 4H and a coin
+  // like ASTR (continuous on its Bybit perp, $1.3M/day across all exchanges) vanished entirely.
+  //
+  //   isIlliquid -- does this coin actually trade? Cross-venue 24h dollar volume answers it.
+  //                 Falls back to the empty-bar test only when CoinGecko is unavailable, so a
+  //                 rate-limited load still fails closed rather than waving everything through.
+  //   thinBars   -- are THESE CANDLES trustworthy? An empty bar repeats the previous close, so
+  //                 its true range is exactly 0. Measured on ASTR: empty bars average 0.000%
+  //                 range against 0.897% on traded bars. That deflates ATR, which deflates the
+  //                 stop distance, which inflates R:R -- the error runs toward "looks better
+  //                 than it is", which is the direction that costs money. So it is surfaced
+  //                 loudly rather than used to delete the row.
+  var ILLIQUID_DOLLAR_VOL = 1e6;   // under $1M/day across ALL exchanges = genuinely untradeable
+  // Deliberately the SAME count on both timeframes. The first attempt raised the bar at 4H on the
+  // reasoning that a 4H bar is a sixth of a Daily one, so empty bars are likelier -- true, but it
+  // answers the wrong question. This threshold is not "is the coin liquid" any more; it is "how
+  // distorted are these candles". Three flat bars in ten knock roughly a fifth off ATR whatever
+  // the bar length, and that feeds position sizing. Distortion, not bar duration, sets the line.
+  var THIN_BAR_COUNT = 3;
+  function readLiquidity(candle, totalVolume){
+    var enoughBars = candle && candle.recentBarCount >= 5;
+    var thinBars = !!(enoughBars && candle.zeroVolBars >= THIN_BAR_COUNT);
+    var isIlliquid;
+    if (totalVolume != null) isIlliquid = totalVolume < ILLIQUID_DOLLAR_VOL;
+    else isIlliquid = thinBars;   // no volume data -- fall back to the old, stricter test
+    return {isIlliquid: isIlliquid, thinBars: thinBars};
+  }
+
   // ---------- one verdict per coin ----------
   // The whole point: a beginner should not have to reconcile Setup vs Breakout vs Tradeable vs
   // Opportunity to answer "do I look at this or not". This collapses all of it into a single
   // ranked call plus one plain sentence saying what to actually do next. Same shape on both tabs.
+  // Verdict proper, then one honesty pass over it: a Ready built on untrustworthy candles is not
+  // a Ready. Capping at Watch keeps the coin visible and ranked, while saying plainly that the
+  // numbers underneath it are soft -- the old behaviour (hide the row) just made coins disappear.
   function computeVerdict(r, effTrend){
+    var v = computeVerdictCore(r, effTrend);
+    if (!r.thinBars || v.rank < 0) return v;
+    var gap = r.zeroVolBars + '/10 bars had no trades on Crypto.com';
+    if (v.rank > 2){
+      return {rank:2, label:'🟡 Watch', cls:'watch',
+        action:'Checks pass, but the numbers are soft — ' + gap + ' at ' + state.candleTimeframe
+             + ', which deflates ATR and inflates R:R. Read the chart before acting'};
+    }
+    return {rank:v.rank, label:v.label, cls:v.cls, action:v.action + ' · thin bars (' + gap + ')'};
+  }
+
+  function computeVerdictCore(r, effTrend){
     var acc = state.mode === 'accumulation';
     if (r.distStatus !== 'ok') return {rank:-1, label:null, cls:'flat', action:'Loading…'};
-    if (r.isIlliquid) return {rank:0, label:'🔴 Avoid', cls:'neg', action:'Barely trades — skip it'};
+    if (r.isIlliquid) return {rank:0, label:'🔴 Avoid', cls:'neg',
+      action: r.totalVolume != null
+        ? ('Barely trades — ' + fmtUsd(r.totalVolume,{compact:true}) + ' a day across all exchanges')
+        : 'Barely trades — skip it'};
 
     var ready = acc ? (r.accTradeable === true) : (r.tradeable === true);
     var blockers = acc ? (r.accTradeReasons || []) : (r.tradeReasons || []);
@@ -1254,6 +1305,7 @@
       var fdvRatio = (mc && mc.fdv && marketCap && marketCap>0) ? (mc.fdv/marketCap) : null;
       var rangePos24h = (mc && mc.high24h!=null && mc.low24h!=null && mc.high24h>mc.low24h && t.price!=null)
         ? ((t.price - mc.low24h) / (mc.high24h - mc.low24h)) * 100 : null;
+      var illiquidRead = readLiquidity(ok ? candle : null, mc ? mc.totalVolume : null);
       rows.push({
         base: base,
         instrument: state.byBase[base].symbol,
@@ -1291,7 +1343,8 @@
         atr14: ok ? candle.atr14 : null,
         volSurgePrev: ok ? candle.volSurgePrev : null,
         totalVolume: mc ? mc.totalVolume : null,
-        isIlliquid: ok ? candle.isIlliquid : false,
+        isIlliquid: illiquidRead.isIlliquid,
+        thinBars: illiquidRead.thinBars,
         zeroVolBars: ok ? candle.zeroVolBars : null,
         distStatus: candle ? candle.status : 'idle',
         trendAlt: altOk ? (altCandle.trend200 || altCandle.trend) : null,
@@ -1333,7 +1386,7 @@
           && effTrend !== 'down'
           && c.trendAgree !== 'conflict'
           && (c.fdvRatio==null || c.fdvRatio<=1.6)
-          && !c.isIlliquid
+          && !lastRow.isIlliquid
           && (c.rs==null || c.rs>=-3);
         lastRow.validEarlyEntry = passes;
 
@@ -1346,7 +1399,7 @@
           && c.rsi14!=null && c.rsi14>=35 && c.rsi14<=60
           && (c.volMcapPct==null || c.volMcapPct<=5)
           && (c.fdvRatio==null || c.fdvRatio<=1.6)
-          && !c.isIlliquid
+          && !lastRow.isIlliquid
           && effTrend !== 'down';
         lastRow.validAccEntry = accPasses;
       } else {
@@ -1671,8 +1724,13 @@
         } else {
           tdTrend.innerHTML = '<span class="muted">n/a</span>';
         }
-        if (r.isIlliquid){
-          tdTrend.innerHTML += ' <span title="'+r.zeroVolBars+' of the last 10 bars had zero volume — Trend and other technicals may be unreliable here">⚠️</span>';
+        if (r.isIlliquid || r.thinBars){
+          var warn = r.isIlliquid
+            ? ((r.totalVolume != null ? fmtUsd(r.totalVolume,{compact:true}) : 'Under $1M') + ' of 24h volume across all exchanges — barely trades anywhere')
+            : (r.zeroVolBars + ' of the last 10 ' + state.candleTimeframe + ' bars had no trades on Crypto.com. '
+               + 'An empty bar repeats the previous close, so its true range is 0 — that deflates ATR, which deflates the stop distance and inflates R:R. '
+               + 'The coin may trade fine on its Bybit perp; it is this venue\'s candles that are gappy. Read the chart before trusting these numbers.');
+          tdTrend.innerHTML += ' <span title="' + warn.replace(/"/g,'&quot;') + '">⚠️</span>';
         }
       } else if (r.distStatus === 'error'){
         tdTrend.innerHTML = '<span class="muted">n/a</span>';
@@ -2566,15 +2624,20 @@
       var avgPrevVol = volBase.reduce(function(s,b){ return s + parseFloat(b.volume_usd); }, 0) / volBase.length;
       volSurgePrev = avgPrevVol > 0 ? (prevVolUsd / avgPrevVol) : null;
     }
+    // Count empty bars, but do NOT decide illiquidity here. That decision needs two things this
+    // function cannot see: the active timeframe (a 4H bar is 6x shorter than a Daily one, so
+    // empty bars are far likelier by construction) and the coin's cross-venue 24h volume.
+    // Conflating the two hid ASTR entirely at 4H -- 3 empty bars on Crypto.com spot, while the
+    // coin trades continuously on the Bybit perp being charted.
     var recentBars = bars.slice(0, 10);
     var zeroVolBars = recentBars.filter(function(b){ return parseFloat(b.volume) === 0; }).length;
-    var isIlliquid = recentBars.length >= 5 && zeroVolBars >= 3;
     return {
       status:'ok', high50:high, distPct:distPct, volSurge:volSurge, volSurgePrev:volSurgePrev,
       low50:low, distFromLowPct:distFromLowPct, volatilityRatio:volatilityRatio, rsi14:rsi14, atr14:atr14,
       trend:trend, trend200:trend200, donchDistPct:donchDistPct, donchDistLowPct:donchDistLowPct, donchWidthPct:donchWidthPct,
       donchHigh20:donchHigh20, donchLow20:donchLow20,
-      channelPosPct:channelPosPct, breakoutStatus:breakoutStatus, isIlliquid:isIlliquid, zeroVolBars:zeroVolBars, btcCorr:btcCorr
+      channelPosPct:channelPosPct, breakoutStatus:breakoutStatus,
+      zeroVolBars:zeroVolBars, recentBarCount:recentBars.length, btcCorr:btcCorr
     };
   }
 

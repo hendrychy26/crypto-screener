@@ -1352,6 +1352,7 @@
       var atr = evaluateAccTradeable(lastRow, effTrend);
       lastRow.accTradeable = atr.ok;
       lastRow.accTradeReasons = atr.reasons;
+      lastRow.accTradeRiskPct = atr.riskPct;   // same 1.5x ATR stop, shown on Accumulation's Ready rows
 
       var vd = computeVerdict(lastRow, effTrend);
       lastRow.verdictRank = vd.rank;
@@ -1598,9 +1599,28 @@
 
         var tdAction = document.createElement('td');
         tdAction.className = 'read-cell';
-        tdAction.textContent = r.verdictAction || '';
+        var actionLine = document.createElement('div');
+        actionLine.textContent = r.verdictAction || '';
+        tdAction.appendChild(actionLine);
+        // Verdict IS the Tradeable check -- Ready means it passed every one. What Simple view was
+        // dropping is the two numbers you actually size a position with, which used to live only
+        // in the expert table's Tradeable column. Second line, Ready rows only, so the screen
+        // stays a shortlist rather than becoming the expert table again.
+        var sizing = [];
+        if (r.tradeRR != null && state.mode !== 'accumulation') sizing.push('R:R ' + r.tradeRR.toFixed(1));
+        var riskSrc = state.mode === 'accumulation' ? r.accTradeRiskPct : r.tradeRiskPct;
+        if (riskSrc != null) sizing.push('risk ' + riskSrc.toFixed(1) + '%');
+        if (sizing.length && (r.verdictRank === 4 || r.verdictRank === 3)){
+          var sizeLine = document.createElement('div');
+          sizeLine.className = 'watch-level';
+          sizeLine.textContent = sizing.join(' · ');
+          sizeLine.title = 'Stop sits 1.5x ATR below entry; R:R projects the range height against that risk.';
+          tdAction.appendChild(sizeLine);
+        }
         var narrS = narrateRow(r);
-        if (narrS.full) tdAction.title = narrS.full;
+        // Lead the tooltip with the full action text -- the cell clamps it, and the clipped part
+        // is usually the actual instruction ("...so alts face a headwind -- half size").
+        tdAction.title = [r.verdictAction, narrS.full].filter(Boolean).join('\n\n');
         tr.appendChild(tdAction);
 
         var tdHideS = document.createElement('td');

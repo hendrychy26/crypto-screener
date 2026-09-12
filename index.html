@@ -103,6 +103,20 @@
   .refresh-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
   .refresh-btn[disabled]{opacity:0.55;cursor:default;}
 
+  .sizing-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;width:100%;}
+  .sizing-field input{width:92px;}
+  .sizing-note{align-self:center;padding-bottom:6px;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--text-dim);}
+  @media (max-width:760px){
+    .sizing-row{gap:8px;}
+    .sizing-field{width:auto;flex:1 1 92px;}
+    .sizing-field input{width:100%;}
+    .sizing-note{flex-basis:100%;padding-bottom:0;}
+  }
+  .size-line{font-size:11.5px;color:var(--text-dim);margin-top:2px;}
+  .size-line .qty{color:var(--text);font-weight:600;font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .size-line .lev{color:var(--accent);}
+  .size-line .warn{color:var(--negative);}
+
   .status-panel{
     display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;
     padding:12px 14px;margin-bottom:14px;box-shadow:var(--shadow);
@@ -520,6 +534,25 @@
           <span>Allow 🟡 CAUTION (half size)</span>
         </label>
       </div>
+      <!-- Sizing sits OUTSIDE #advancedControls on purpose: that block is hidden in Simple View,
+           which is the view actually used on a phone -- the one place "how much do I buy" matters
+           most. Expert-only would have made the calculator invisible to its main user. -->
+      <div class="sizing-row">
+        <div class="field sizing-field" title="Position sizing works backwards from the stop: risk budget ÷ stop distance = position size. Leave Account blank to hide it. Nothing here is sent anywhere — it is stored only in this browser.">
+          <label for="acctEquity">Account $</label>
+          <input type="number" id="acctEquity" placeholder="e.g. 115" min="0" step="any" inputmode="decimal">
+        </div>
+        <div class="field sizing-field">
+          <label for="riskPct">Risk %</label>
+          <input type="number" id="riskPct" min="0.05" max="5" step="0.05" inputmode="decimal">
+        </div>
+        <div class="field sizing-field" title="Stop distance as a multiple of ATR(14). 2.0 matches the validated Donchian system. The Tradeable gate scores risk at 1.5x for screening; this setting only drives the size calculator.">
+          <label for="atrMult">Stop ×ATR</label>
+          <input type="number" id="atrMult" min="0.5" max="5" step="0.1" inputmode="decimal">
+        </div>
+        <span class="field-caption sizing-note" id="riskBudgetNote"></span>
+      </div>
+
       <div id="advancedControls" style="display:contents;">
         <div class="field">
           <label for="candleTimeframe">Candles</label>
@@ -635,6 +668,7 @@
         <li><strong>"Hide illiquid"</strong> drops coins doing under <span class="num">$1M</span> of 24h volume <em>across all exchanges</em> (CoinGecko) — genuinely untradeable, whatever the chart looks like. If that figure is unavailable it falls back to the empty-bar test below, so a rate-limited load still fails closed.</li>
         <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the 1.5×ATR stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
+        <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system (the Tradeable gate separately scores risk at 1.5×ATR for screening; this setting only drives the calculator). <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
         <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
         <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
         <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
@@ -784,7 +818,9 @@
   var DEFAULT_CONFIG = {
     mode: 'breakout',
     weightsByMode: freshWeightsByMode(),
-    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, alertsOn: false, allowCaution: false, simpleView: true
+    pageSize: 50, sortKey: 'verdict', sortDir: 'desc', bybitOnly: true, candleTimeframe: '1D', hideIlliquid: true, trendFilter: 'all', earlyEntryOnly: false, tradeableOnly: false, alertsOn: false, allowCaution: false, simpleView: true,
+    // 0 = calculator off. 1% risk and a 2x ATR stop are the validated defaults.
+    acctEquity: 0, riskPct: 1, atrMult: 2
   };
   var savedConfig = loadConfig();
   var state = {
@@ -794,6 +830,10 @@
     candles: {},            // symbol -> computed technicals, primary (selected) timeframe
     candlesAlt: {},         // symbol -> computed technicals, complementary timeframe (for TF-agreement check)
     marketCaps: {},         // base -> {marketCap, totalVolume, ...}
+    bybitMinQty: null,      // base -> minimum order quantity on the perp
+    acctEquity: savedConfig.acctEquity,
+    riskPct: savedConfig.riskPct,
+    atrMult: savedConfig.atrMult,
     mode: savedConfig.mode,
     weightsByMode: savedConfig.weightsByMode,
     search: '',
@@ -851,7 +891,8 @@
       candleTimeframe: DEFAULT_CONFIG.candleTimeframe, hideIlliquid: DEFAULT_CONFIG.hideIlliquid,
       trendFilter: DEFAULT_CONFIG.trendFilter, earlyEntryOnly: DEFAULT_CONFIG.earlyEntryOnly,
       tradeableOnly: DEFAULT_CONFIG.tradeableOnly, alertsOn: DEFAULT_CONFIG.alertsOn,
-      allowCaution: DEFAULT_CONFIG.allowCaution, simpleView: DEFAULT_CONFIG.simpleView
+      allowCaution: DEFAULT_CONFIG.allowCaution, simpleView: DEFAULT_CONFIG.simpleView,
+      acctEquity: DEFAULT_CONFIG.acctEquity, riskPct: DEFAULT_CONFIG.riskPct, atrMult: DEFAULT_CONFIG.atrMult
     };
     try {
       var raw = localStorage.getItem('screener_config_sa');
@@ -897,7 +938,10 @@
         tradeableOnly: (typeof saved.tradeableOnly === 'boolean') ? saved.tradeableOnly : DEFAULT_CONFIG.tradeableOnly,
         alertsOn: (typeof saved.alertsOn === 'boolean') ? saved.alertsOn : DEFAULT_CONFIG.alertsOn,
         allowCaution: (typeof saved.allowCaution === 'boolean') ? saved.allowCaution : DEFAULT_CONFIG.allowCaution,
-        simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView
+        simpleView: (typeof saved.simpleView === 'boolean') ? saved.simpleView : DEFAULT_CONFIG.simpleView,
+        acctEquity: numOr(saved.acctEquity, DEFAULT_CONFIG.acctEquity, 0, 1e9),
+        riskPct: numOr(saved.riskPct, DEFAULT_CONFIG.riskPct, 0.05, 5),
+        atrMult: numOr(saved.atrMult, DEFAULT_CONFIG.atrMult, 0.5, 5)
       };
     } catch(e){ return fallback; }
   }
@@ -907,7 +951,8 @@
         mode: state.mode, weightsByMode: state.weightsByMode, pageSize: state.pageSize,
         sortKey: state.sortKey, sortDir: state.sortDir,
         bybitOnly: state.bybitOnly, candleTimeframe: state.candleTimeframe, hideIlliquid: state.hideIlliquid,
-        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, alertsOn: state.alertsOn, allowCaution: state.allowCaution, simpleView: state.simpleView
+        trendFilter: state.trendFilter, earlyEntryOnly: state.earlyEntryOnly, tradeableOnly: state.tradeableOnly, alertsOn: state.alertsOn, allowCaution: state.allowCaution, simpleView: state.simpleView,
+        acctEquity: state.acctEquity, riskPct: state.riskPct, atrMult: state.atrMult
       }));
       flashSaved();
     } catch(e){}
@@ -968,6 +1013,70 @@
   // different symbols for the same coin.
   function tvChartUrl(base){
     return 'https://www.tradingview.com/chart/?symbol=' + encodeURIComponent('BYBIT:' + base + 'USDT.P');
+  }
+
+  // fmtUsd is tuned for coin PRICES (6 decimals on sub-dollar values, which is right for $0.005938
+  // and absurd for a $1.15 risk budget). Money amounts get their own formatter.
+  function fmtMoney(v){
+    if (v == null || isNaN(v)) return '—';
+    var abs = Math.abs(v);
+    if (abs >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+    if (abs >= 1000) return '$' + Math.round(v).toLocaleString('en-US');
+    if (abs >= 10) return '$' + v.toFixed(0);
+    return '$' + v.toFixed(2);
+  }
+
+  function numOr(v, dflt, lo, hi){
+    var n = parseFloat(v);
+    if (!isFinite(n) || n < lo || n > hi) return dflt;
+    return n;
+  }
+
+  // ---------- position sizing ----------
+  // Size is derived from the stop, never chosen first: risk budget ÷ stop distance = notional.
+  // That inverts the usual mistake of picking a position size and discovering the risk afterwards.
+  // maxLev is the part that matters most in practice -- with a stop in place, leverage does not
+  // change how much you lose, only how close liquidation sits. Liquidation inside your own stop
+  // means the stop can never fire: at 50x liquidation is ~1.4% away, which is less than one
+  // average 4H bar on most alts. The 3x buffer keeps the stop comfortably in front of it.
+  function computeSizing(r){
+    if (!(state.acctEquity > 0) || r.atr14 == null || !(r.price > 0)) return null;
+    var stopPct = (state.atrMult * r.atr14 / r.price) * 100;
+    if (!(stopPct > 0)) return null;
+    var riskUsd = state.acctEquity * (state.riskPct / 100);
+    var notional = riskUsd / (stopPct / 100);
+    var qty = notional / r.price;
+    var minQty = state.bybitMinQty ? state.bybitMinQty[r.base] : null;
+    return {
+      stopPct: stopPct,
+      riskUsd: riskUsd,
+      notional: notional,
+      qty: qty,
+      maxLev: Math.max(1, Math.floor(100 / (3 * stopPct))),
+      // Correct size can fall below what the exchange will accept -- at a small account on a
+      // high-priced coin, the minimum order IS more risk than the rules allow. Say so, rather
+      // than printing a quantity that cannot be traded.
+      belowMin: (minQty != null && qty < minQty),
+      minQty: minQty
+    };
+  }
+  function fmtQty(q){
+    if (q >= 1000) return Math.round(q).toLocaleString('en-US');
+    if (q >= 1) return q.toFixed(2).replace(/\.00$/,'');
+    return q.toPrecision(3);
+  }
+  function sizingLineHtml(r){
+    var s = computeSizing(r);
+    if (!s) return '';
+    if (s.belowMin){
+      return '<div class="size-line"><span class="warn">Too small to trade correctly</span> — '
+        + state.riskPct + '% of ' + fmtMoney(state.acctEquity) + ' allows ' + fmtQty(s.qty)
+        + ', but Bybit\'s minimum is ' + fmtQty(s.minQty) + '</div>';
+    }
+    return '<div class="size-line"><span class="qty">' + fmtQty(s.qty) + ' ' + escapeHtml(r.base) + '</span>'
+      + ' ≈ ' + fmtMoney(s.notional)
+      + ' · stop ' + s.stopPct.toFixed(1) + '% = ' + fmtMoney(s.riskUsd) + ' risk'
+      + ' · <span class="lev">max ' + s.maxLev + 'x</span></div>';
   }
 
   // Network error text ends up in the status panel; it comes from outside, so never trust it
@@ -1690,6 +1799,16 @@
           sizeLine.title = 'Stop sits 1.5x ATR below entry; R:R projects the range height against that risk.';
           tdAction.appendChild(sizeLine);
         }
+        // How much to actually buy. Shown from 🟡 Watch upward -- the number is worth seeing
+        // while a setup is still forming, not only once it is live.
+        if (r.verdictRank >= 2){
+          var szHtml = sizingLineHtml(r);
+          if (szHtml){
+            var szWrap = document.createElement('div');
+            szWrap.innerHTML = szHtml;
+            tdAction.appendChild(szWrap.firstChild);
+          }
+        }
         var narrS = narrateRow(r);
         // Lead the tooltip with the full action text -- the cell clamps it, and the clipped part
         // is usually the actual instruction ("...so alts face a headwind -- half size").
@@ -2000,7 +2119,8 @@
             var rrTxt = r.tradeRR != null ? ('R:R ' + r.tradeRR.toFixed(1)) : 'R:R n/a';
             var riskTxt = r.tradeRiskPct != null ? (r.tradeRiskPct.toFixed(1) + '% risk') : '';
             tdTradeable.innerHTML = '<span class="pill pos" title="Passes every Tradeable check: valid structure, regime TRADE, trend up, timeframes aligned, stop within 8%, R:R >= 2, volume appropriate for its phase, liquid, and not a BTC proxy.">✅ ' + rrTxt + '</span>'
-              + '<div class="watch-level">' + riskTxt + '</div>';
+              + '<div class="watch-level">' + riskTxt + '</div>'
+              + sizingLineHtml(r);
           } else {
             var blocked = (r.tradeReasons && r.tradeReasons.length)
               ? 'Blocked by: ' + r.tradeReasons.join('; ')
@@ -2056,6 +2176,34 @@
     saveHidden();
     render();
   });
+
+  // ---------- position sizing controls ----------
+  // Account size is personal, so it lives only in this browser's localStorage and is deliberately
+  // NOT reset by "Reset weights" -- that button is for scoring, not for your account.
+  (function(){
+    var eq = document.getElementById('acctEquity');
+    var rp = document.getElementById('riskPct');
+    var am = document.getElementById('atrMult');
+    var note = document.getElementById('riskBudgetNote');
+    if (!eq || !rp || !am) return;
+    eq.value = state.acctEquity > 0 ? state.acctEquity : '';
+    rp.value = state.riskPct;
+    am.value = state.atrMult;
+    function paintNote(){
+      if (!(state.acctEquity > 0)){ note.textContent = 'blank = calculator off'; return; }
+      note.textContent = state.riskPct + '% = ' + fmtMoney(state.acctEquity * state.riskPct / 100) + ' risked per trade';
+    }
+    function apply(){
+      state.acctEquity = numOr(eq.value, 0, 0, 1e9);
+      state.riskPct = numOr(rp.value, DEFAULT_CONFIG.riskPct, 0.05, 5);
+      state.atrMult = numOr(am.value, DEFAULT_CONFIG.atrMult, 0.5, 5);
+      paintNote();
+      saveConfig();
+      render();
+    }
+    [eq, rp, am].forEach(function(el){ el.addEventListener('input', apply); el.addEventListener('change', apply); });
+    paintNote();
+  })();
 
   // ---------- controls wiring ----------
   document.getElementById('pageSize').value = String(state.pageSize);
@@ -3076,6 +3224,25 @@
     });
   }
 
+  // Minimum order size per perp. Without this the calculator can print a quantity Bybit will
+  // reject -- which at a small account is not an edge case: the minimum order on a high-priced
+  // coin can carry more risk than the rules allow, and that is worth being told explicitly.
+  function loadBybitMinQty(){
+    return fetchJson('https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000').then(function(d){
+      var list = (d.result && d.result.list) || [];
+      var map = {};
+      list.forEach(function(i){
+        var s = i.symbol;
+        if (!s || s.slice(-4) !== 'USDT') return;
+        var lot = i.lotSizeFilter || {};
+        var min = parseFloat(lot.minOrderQty);
+        if (isFinite(min) && min > 0) map[s.slice(0, -4)] = min;
+      });
+      state.bybitMinQty = map;
+      render();
+    }).catch(function(){ /* sizing still works, it just can't warn about minimums */ });
+  }
+
   // Recomputed whenever either side's prices change, since Crypto.com tickers refresh every 30s
   // and may arrive after the Bybit list.
   function applyBybitBases(){
@@ -3419,6 +3586,7 @@
       showBanner(FILE_URL_TIP, false);
     }
 
+    loadBybitMinQty();
     Promise.all([loadUniverse(), loadBybitBases()])
       .then(function(){
         if (!Object.keys(state.byBase).length){

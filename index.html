@@ -526,7 +526,7 @@
           <input type="checkbox" id="alertsOn">
           <span>🔔 Alert on ✅ Confirming</span>
         </label>
-        <label class="checkbox-field" id="tradeableLabel" title="Breakout tab only. A higher bar than Setup: requires a valid coil OR a live (fresh/confirming) breakout, PLUS regime = TRADE, trend genuinely up, timeframes aligned, an ATR-based stop within 8%, measured-move R:R of at least 2, real participation (volume drying up while coiling / expanding once triggered), $5M+ daily volume, $20M+ market cap, and BTC correlation under 0.85. Hover any row's Tradeable cell to see exactly which checks it failed.">
+        <label class="checkbox-field" id="tradeableLabel" title="Breakout tab only. A higher bar than Setup: requires a valid coil OR a live (fresh/confirming) breakout, PLUS regime = TRADE, trend genuinely up, timeframes aligned, an ATR-based stop within the risk cap (8% of price per 1x ATR -- so 12% at a 1.5x stop, 16% at 2x), measured-move R:R of at least 2 computed against that same stop, real participation (volume drying up while coiling / expanding once triggered), $5M+ daily volume, $20M+ market cap, and BTC correlation under 0.85. Hover any row's Tradeable cell to see exactly which checks it failed.">
           <input type="checkbox" id="tradeableOnly">
           <span id="tradeableText">Ready to trade only</span>
         </label>
@@ -633,7 +633,7 @@
             <li><strong>Structure</strong> — either a valid coil (<span class="num">✓ Coiled</span>) or a live breakout still in <span class="num">🆕 Fresh</span> / <span class="num">✅ Confirming</span>. Failed and Extended breakouts are rejected.</li>
             <li><strong>Regime = 🟢 TRADE</strong> — a hard gate here, not the soft discount the Opportunity score applies. No longs screened during 🟡 CAUTION or 🔴 STAND DOWN.</li>
             <li><strong>Trend genuinely up</strong> (not merely "not down") and <strong>timeframes agreeing</strong> (✓, not just the absence of ⚠).</li>
-            <li><strong>A stop you can size around</strong> — a 1.5x ATR(14) structural stop within 12% of price. (Originally 8%, which was calibrated off majors: on Daily crypto alts ATR alone is routinely 5-8%, so 1.5x ATR lands at 10-12% and the tighter bound rejected essentially every alt regardless of how good its reward:risk was.) Risk % is always shown so you can size down accordingly.</li>
+            <li><strong>A stop you can size around</strong> — an ATR(14) structural stop at the multiple set in <strong>Stop ×ATR</strong> (default 2.0), capped at <span class="num">8%</span> of price per 1x of ATR: 12% at a 1.5x stop, 16% at 2x. (The cap was originally a flat 8%, calibrated off majors: on Daily crypto alts ATR alone is routinely 5-8%, so the tighter bound rejected essentially every alt regardless of how good its reward:risk was. Expressing it per unit of ATR keeps that calibration intact at any multiple.) <strong>R:R is measured against the same stop you are told to place</strong> — these used to differ, with R:R scored at 1.5x while the size calculator sized a 2x stop, so a row reading "R:R 2.1" was really delivering 1.6.</li>
             <li><strong>Not already chasing</strong> — no more than 15% above the trigger. A coin can be "confirming" by bar count while price has already run far past the level; bar count says early, price says the entry is gone.</li>
             <li><strong>R:R ≥ 2</strong> — measured move (the Donchian range height projected from the breakout) divided by that risk.</li>
             <li><strong>Participation appropriate to its phase</strong> — volume <em>drying up</em> (≤1.2x) while still coiling, or <em>expanding</em> (≥1.3x) once triggered. These are deliberately opposite tests: a coil on rising volume is churn, and a breakout on flat volume is the textbook failure.</li>
@@ -668,9 +668,9 @@
         <li><strong>Read</strong> is a plain-language, one-line summary generated entirely from the numbers already in that row — deterministic, no AI call. Hover it for the fuller version, which now includes the 7d %, ATH distance/date, range position, Vol/MCap and FDV/MCap where relevant. <strong>Search also matches Read</strong> — try a phrase like <span class="num">confirming breakout</span>, <span class="num">near ATH</span>, or <span class="num">deep discount</span>.</li>
         <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
         <li><strong>"Hide illiquid"</strong> drops coins doing under <span class="num">$1M</span> of 24h volume <em>across all exchanges</em> (CoinGecko) — genuinely untradeable, whatever the chart looks like. If that figure is unavailable it falls back to the empty-bar test below, so a rate-limited load still fails closed.</li>
-        <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the 1.5×ATR stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
+        <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
-        <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system (the Tradeable gate separately scores risk at 1.5×ATR for screening; this setting only drives the calculator). <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
+        <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system. <strong>This one setting drives everything</strong> — the sizing line, the risk % shown on the row, the R:R, and the stop-width cap — so the R:R you read is always measured against the stop you are told to place. <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
         <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
         <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. The scan runs <strong>4 fetches in parallel</strong> while everything is healthy — one at a time left the connection idle between round trips and made a 50-row page take over a minute; it now takes about 20 seconds — and <strong>collapses to a single lane the moment anything fails</strong>, so the brake and the accelerator are the same lever. Measured with every request failing: 8 attempts in 25 seconds, against hundreds before any backoff existed. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
         <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
@@ -1075,10 +1075,18 @@
         + state.riskPct + '% of ' + fmtMoney(state.acctEquity) + ' allows ' + fmtQty(s.qty)
         + ', but Bybit\'s minimum is ' + fmtQty(s.minQty) + '</div>';
     }
+    // Thin bars deflate ATR, and ATR is the denominator of this entire calculation: a deflated
+    // ATR yields a stop that is too tight, a position that is too large, and a leverage ceiling
+    // that is too generous -- all three wrong in the expensive direction. The row is already
+    // capped at Watch for it; the numbers themselves have to say it too, because this is the
+    // line someone copies into an order.
+    var caveat = r.thinBars
+      ? ' · <span class="warn">ATR understated (thin bars) — treat this size as a maximum</span>'
+      : '';
     return '<div class="size-line"><span class="qty">' + fmtQty(s.qty) + ' ' + escapeHtml(r.base) + '</span>'
       + ' ≈ ' + fmtMoney(s.notional)
       + ' · stop ' + s.stopPct.toFixed(1) + '% = ' + fmtMoney(s.riskUsd) + ' risk'
-      + ' · <span class="lev">max ' + s.maxLev + 'x</span></div>';
+      + ' · <span class="lev">max ' + s.maxLev + 'x</span>' + caveat + '</div>';
   }
 
   // Network error text ends up in the status panel; it comes from outside, so never trust it
@@ -1178,7 +1186,10 @@
     // 5-8%). An 8% bound was calibrated off majors and rejected essentially every alt regardless
     // of how good its reward:risk was -- a live scan found 13 confirming coins and threw out all
     // 13 on stop width alone. R:R is the real gate; this only trims the untradeable tail.
-    maxRiskPct:     12,
+    // Expressed per unit of ATR rather than as a raw percentage, because the stop multiple is now
+    // a user setting. 12% at the old fixed 1.5x ATR == 8% of price per 1x ATR, so the gate keeps
+    // exactly the strictness it was calibrated to at any multiple: 12% at 1.5x, 16% at 2x.
+    maxRiskPctPerAtr: 8,
     minRR:          2,      // measured move (range height) must be >= 2x the risk taken
     minVolDryUp:    1.2,    // still coiling: last completed bar <= 1.2x avg -- quiet coil, not churn
     minVolExpand:   1.3,    // already triggered: last completed bar >= 1.3x avg -- real participation
@@ -1233,8 +1244,14 @@
     // --- Risk & reward: ATR-based stop, measured-move target (range height projected) ---
     var riskPct = null, rrRatio = null;
     if (r.atr14 != null && r.price > 0){
-      riskPct = (1.5 * r.atr14 / r.price) * 100;   // 1.5 ATR below entry -- standard structural stop
-      if (riskPct > TRADEABLE.maxRiskPct) why.push('stop ' + riskPct.toFixed(1) + '% away');
+      // Same ATR multiple the size calculator uses. These were 1.5x here and a settable 2x there,
+      // which put TWO different stop distances on one row: R:R was measured against a 6.2% stop
+      // while the sizing line told you to place it at 8.2%. A trade taken on "R:R 2.1" was really
+      // getting 1.6. One multiple, one stop, one R:R.
+      riskPct = (state.atrMult * r.atr14 / r.price) * 100;
+      if (riskPct > TRADEABLE.maxRiskPctPerAtr * state.atrMult){
+        why.push('stop ' + riskPct.toFixed(1) + '% away');
+      }
       if (r.donchWidthPct != null && riskPct > 0){
         rrRatio = r.donchWidthPct / riskPct;
         if (rrRatio < TRADEABLE.minRR) why.push('R:R ' + rrRatio.toFixed(1) + ' below 2');
@@ -1280,8 +1297,10 @@
     if (effTrend === 'down') why.push('still making lower lows');
     var riskPct = null;
     if (r.atr14 != null && r.price > 0){
-      riskPct = (1.5 * r.atr14 / r.price) * 100;
-      if (riskPct > TRADEABLE.maxRiskPct) why.push('stop ' + riskPct.toFixed(1) + '% away');
+      riskPct = (state.atrMult * r.atr14 / r.price) * 100;   // same multiple as the size calculator
+      if (riskPct > TRADEABLE.maxRiskPctPerAtr * state.atrMult){
+        why.push('stop ' + riskPct.toFixed(1) + '% away');
+      }
     } else { why.push('no ATR'); }
     if (r.totalVolume == null) why.push('24h volume unknown');
     else if (r.totalVolume < TRADEABLE.minDollarVol) why.push('24h volume ' + fmtUsd(r.totalVolume,{compact:true}) + ' (under $5M)');
@@ -1408,7 +1427,25 @@
       var ok = candle && candle.status==='ok';
       var altCandle = state.candlesAlt[state.byBase[base].symbol];
       var altOk = altCandle && altCandle.status==='ok';
-      var mc = state.marketCaps[base];
+      // ---- Price-verify the CoinGecko match before trusting anything it carries ----
+      // Market caps are matched to a coin by TICKER, and a ticker is not an identity. Measured
+      // live: 7 universe coins resolve to a different project of the same name -- Crypto.com's
+      // TRUST is 401x from CoinGecko's TRUST, ONE is 170x from 'ONEchain', FRAX 3.7x from
+      // 'Legacy Frax Dollar'. Each was inheriting that other asset's market cap, 24h volume,
+      // ATH distance and FDV, which feed the $20M cap / $5M volume gate -- a RISK GATE FAILING
+      // OPEN, since a thin coin can clear it on a larger stranger's liquidity.
+      // Same 25% agreement test the Bybit perp match has used since the ADI incident; a real
+      // spot-vs-reference-price gap is a fraction of a percent, so this only catches identity
+      // mismatches. On failure everything cap-derived reads unknown and the gates fail closed.
+      var mcRaw = state.marketCaps[base];
+      var capMismatch = null;
+      if (mcRaw && mcRaw.cgPrice > 0 && t.price > 0){
+        var capRatio = Math.max(t.price, mcRaw.cgPrice) / Math.min(t.price, mcRaw.cgPrice);
+        if (capRatio > COLLISION_RATIO){
+          capMismatch = { ratio: capRatio, name: mcRaw.cgName, cgPrice: mcRaw.cgPrice };
+        }
+      }
+      var mc = capMismatch ? null : mcRaw;
       var marketCap = mc ? mc.marketCap : null;
       // Uses CoinGecko's aggregated global 24h volume (all exchanges), not just Crypto.com's
       // own slice, so this reads as true market-wide conviction rather than one venue's activity.
@@ -1456,6 +1493,7 @@
         totalVolume: mc ? mc.totalVolume : null,
         isIlliquid: illiquidRead.isIlliquid,
         thinBars: illiquidRead.thinBars,
+        capMismatch: capMismatch,
         zeroVolBars: ok ? candle.zeroVolBars : null,
         distStatus: candle ? candle.status : 'idle',
         trendAlt: altOk ? (altCandle.trend200 || altCandle.trend) : null,
@@ -1530,7 +1568,7 @@
       var atr = evaluateAccTradeable(lastRow, effTrend);
       lastRow.accTradeable = atr.ok;
       lastRow.accTradeReasons = atr.reasons;
-      lastRow.accTradeRiskPct = atr.riskPct;   // same 1.5x ATR stop, shown on Accumulation's Ready rows
+      lastRow.accTradeRiskPct = atr.riskPct;   // same multiple as everywhere else, shown on Accumulation Ready rows
 
       var vd = computeVerdict(lastRow, effTrend);
       lastRow.verdictRank = vd.rank;
@@ -1734,7 +1772,29 @@
          + ' ready so far) — leave it open, it works through the list.';
   }
 
+  // Every candle response calls render(), and render() rebuilds the whole table -- up to 100 rows
+  // by 20-odd columns of created DOM, plus a full recompute of every technical. At one fetch at a
+  // time that was survivable; with four lanes in flight it is four full rebuilds per ~120ms, which
+  // is exactly the kind of load a phone shows as jank. Collapse bursts into one paint per frame.
+  // Not a debounce with a delay: this still renders on the very next frame, so nothing feels slower.
+  // Scheduling detail that matters more than it looks: requestAnimationFrame does NOT fire while
+  // a tab is hidden or backgrounded. Coalescing on rAF alone meant a page loaded in a background
+  // tab -- routine on a phone -- would sit on "waiting on live prices" and never draw, because
+  // the frame it was waiting for never came. Caught exactly that way in testing. So both a frame
+  // and a timer are armed, and whichever arrives first paints; the flag keeps it to one render.
+  var renderPending = false;
+  function renderFlush(){
+    if (!renderPending) return;
+    renderPending = false;
+    renderNow();
+  }
   function render(){
+    if (renderPending) return;
+    renderPending = true;
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(renderFlush);
+    setTimeout(renderFlush, 60);   // the fallback that actually runs when hidden
+  }
+  function renderNow(){
     var allRows = computeRows();
     var shown = allRows.slice(0, state.pageSize);
     visibleForCandles = shown.map(function(r){ return r.instrument; });
@@ -1807,7 +1867,7 @@
         } else {
           var vTitle = state.mode === 'accumulation'
             ? 'Ready = a valid base, liquid, not a BTC proxy, sane stop distance, and BTC not in a downtrend. Watch = the base is there but one check still fails. Not yet = no base. Avoid = downtrend or barely trades.'
-            : 'Ready = valid structure, regime TRADE, trend up, timeframes agree, stop within 8%, R:R at least 2, volume right for its phase, liquid, not a BTC proxy. Watch = structure is there but one check still fails. Not yet = no setup. Avoid = failed breakout or downtrend.';
+            : 'Ready = valid structure, regime TRADE, trend up, timeframes agree, an ATR-scaled stop within the risk cap, R:R at least 2 against that same stop, volume right for its phase, liquid, not a BTC proxy. Watch = structure is there but one check still fails. Not yet = no setup. Avoid = failed breakout or downtrend.';
           tdVerdict.innerHTML = '<span class="pill '+r.verdictCls+'" title="'+vTitle+'">'+r.verdictLabel+'</span>';
         }
         tr.appendChild(tdVerdict);
@@ -1829,7 +1889,7 @@
           var sizeLine = document.createElement('div');
           sizeLine.className = 'watch-level';
           sizeLine.textContent = sizing.join(' · ');
-          sizeLine.title = 'Stop sits 1.5x ATR below entry; R:R projects the range height against that risk.';
+          sizeLine.title = 'Stop sits ' + state.atrMult + 'x ATR(14) below entry; R:R projects the measured move (range height) against that same risk.';
           tdAction.appendChild(sizeLine);
         }
         // How much to actually buy. Shown from 🟡 Watch upward -- the number is worth seeing
@@ -1875,6 +1935,11 @@
           tdTrend.innerHTML = '<span class="pill flat">— Mixed</span>';
         } else {
           tdTrend.innerHTML = '<span class="muted">n/a</span>';
+        }
+        if (r.capMismatch){
+          tdTrend.innerHTML += ' <span title="' + ('CoinGecko\'s entry for this ticker is “' + r.capMismatch.name
+            + '” at ' + fmtUsd(r.capMismatch.cgPrice) + ' — ' + r.capMismatch.ratio.toFixed(0)
+            + 'x away from this venue’s price, so it is a different asset. Market cap, 24h volume, ATH distance and FDV are withheld rather than borrowed from it, which means this coin cannot pass the liquidity gates.').replace(/"/g,'&quot;') + '">🚫</span>';
         }
         if (r.isIlliquid || r.thinBars){
           var warn = r.isIlliquid
@@ -2151,7 +2216,7 @@
           if (r.tradeable === true){
             var rrTxt = r.tradeRR != null ? ('R:R ' + r.tradeRR.toFixed(1)) : 'R:R n/a';
             var riskTxt = r.tradeRiskPct != null ? (r.tradeRiskPct.toFixed(1) + '% risk') : '';
-            tdTradeable.innerHTML = '<span class="pill pos" title="Passes every Tradeable check: valid structure, regime TRADE, trend up, timeframes aligned, stop within 8%, R:R >= 2, volume appropriate for its phase, liquid, and not a BTC proxy.">✅ ' + rrTxt + '</span>'
+            tdTradeable.innerHTML = '<span class="pill pos" title="Passes every Tradeable check: valid structure, regime TRADE, trend up, timeframes aligned, an ATR-scaled stop within the risk cap, R:R >= 2 against that same stop, volume appropriate for its phase, liquid, and not a BTC proxy.">✅ ' + rrTxt + '</span>'
               + '<div class="watch-level">' + riskTxt + '</div>'
               + sizingLineHtml(r);
           } else {
@@ -3525,6 +3590,9 @@
           if (!sym || caps.hasOwnProperty(sym)) return; // first occurrence = highest market cap (list is market_cap_desc)
           caps[sym] = {
             id: coin.id,
+            // Kept so the match can be price-verified: a ticker is not an identity.
+            cgPrice: coin.current_price,
+            cgName: coin.name,
             marketCap: coin.market_cap,
             totalVolume: coin.total_volume,
             fdv: coin.fully_diluted_valuation,

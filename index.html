@@ -103,6 +103,7 @@
   .refresh-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
   .refresh-btn[disabled]{opacity:0.55;cursor:default;}
 
+  .src-tag{font-size:9px;color:var(--text-faint);margin-left:3px;vertical-align:super;cursor:help;}
   .sizing-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;width:100%;}
   .sizing-field input{width:92px;}
   .sizing-note{align-self:center;padding-bottom:6px;text-transform:none;letter-spacing:normal;font-weight:400;color:var(--text-dim);}
@@ -658,6 +659,7 @@
         <li><strong>7d momentum</strong> sits alongside 24h everywhere in Breakout mode so you can read acceleration: 24h hot but 7d flat reads as an <em>early move</em>; 24h cooling while 7d is still way up reads as <em>cooling off</em> — both called out directly in the Read column.</li>
         <li><strong>Up to 300 bars of history</strong> for the technicals that still need real candles (RSI, Donchian channel width/position, Range Contraction, TF Agree, the 20-period and 200-period Trend filters) — Crypto.com's raw REST candlestick endpoint returns up to 300 bars per request. At <strong>4H</strong> that's ~50 days; at <strong>Daily</strong> that's ~300 days. Whichever one you pick, TF Agree always fetches the other for the cross-check.</li>
         <li><strong>Trend(200)</strong> (Breakout tab) is a genuine 200-period EMA trend filter — price above a rising 200 EMA is Up, below a falling one is Down. The simpler 20-period <span class="num">Trend</span> column (used everywhere, and as this signal's fallback when a coin has under ~210 bars of history) is unchanged.</li>
+        <li><strong>Coverage: Bybit perps Crypto.com doesn't list</strong> — the universe used to be Crypto.com's spot listings filtered to those with a Bybit perp, which silently capped what could ever appear at <span class="num">276</span> of Bybit's <span class="num">761</span> tradeable perps. Measured against CoinGecko's top 1000, <strong>74 of the missing coins clear this screener's own liquidity gates</strong> — BNB, TRX, XMR, KAS, IOTA, DASH, ZEC, MNT, OKB, CAKE, AKE among them. Those now appear, priced and charted from <strong>Bybit</strong>, marked with a small <span class="num">ᴮ</span> next to the ticker (hover any coin name to see which venue its row came from). Bybit also lists hundreds of tokenized equities and stablecoins on the same endpoint, so membership in CoinGecko's top 1000 is the admission test — self-maintaining, unlike a hand-written denylist of 300 stock tickers, and it doubles as the market-cap source those coins need. <strong>Additive by design:</strong> every coin Crypto.com lists keeps its existing record and data source untouched, so if CoinGecko is rate-limited the failure mode is "no new coins", never "no coins". Cross-checked on ETH, SOL and AAVE, both venues produce the same technicals: RSI identical to 0.1, Donchian levels within 0.15%, 200 EMA within 0.03%.</li>
         <li><strong>Universe is spot USD/USDT pairs only</strong>, classified directly from Crypto.com's instrument list (<span class="num">inst_type: CCY_PAIR</span>), filtered to exclude tokenized-stock, ETF, commodity and stablecoin listings using a manual blocklist. Click the <span class="num">×</span> next to any row that doesn't belong to hide it permanently on this device.</li>
         <li><strong>Bybit perp availability</strong> is checked live against Bybit's ticker list on load, and <strong>verified by price</strong>, not just by ticker. Matching on ticker alone is genuinely dangerous: Crypto.com's <span class="num">ADI</span> trades around $8.76 while Bybit's <span class="num">ADIUSDT.P</span> is an unrelated asset near $380 — 43x apart. Left unchecked, the technicals get computed from one asset while the chart link sends you to another, which looks exactly like a working screener right up until you trade it. A perp now only counts as the same coin if the two venues agree on price within 25% (real spot-vs-perp basis is under a couple of percent, so this only catches genuine collisions); mismatches are dropped from the <span class="num">Bybit perp only</span> filter. Currently affects ADI and EDGE.</li>
         <li><strong>Composite score</strong> ranks each coin 0–100 on each metric relative to the current filtered set, then blends those ranks using the sliders above — it updates instantly as you drag, no refetch needed. Market Cap and Market Cap Rank are shown for reference only and never enter a composite score.</li>
@@ -1748,8 +1750,15 @@
       symLink.href = tvUrl;
       symLink.target = '_blank';
       symLink.rel = 'noopener noreferrer';
-      symLink.title = 'Open ' + r.base + 'USDT.P on Bybit (TradingView)';
-      symLink.innerHTML = '<span class="chart-ico">◪</span><span class="sym">'+r.base+'</span><span class="quote">/'+r.quote+'</span>';
+      // Rows can be computed from either venue, so say which. Silent mixing would be the kind of
+      // detail that only surfaces when two numbers disagree and there is no way to tell why.
+      var fromBybit = state.byBase[r.base] && state.byBase[r.base].source === 'bybit';
+      symLink.title = 'Open ' + r.base + 'USDT.P on Bybit (TradingView)'
+        + (fromBybit ? ' — price and candles for this row come from the Bybit perp: Crypto.com does not list it'
+                     : ' — price and candles for this row come from Crypto.com spot');
+      symLink.innerHTML = '<span class="chart-ico">◪</span><span class="sym">'+r.base+'</span>'
+        + '<span class="quote">/'+r.quote+'</span>'
+        + (fromBybit ? '<span class="src-tag" title="Data source: Bybit perp">ᴮ</span>' : '');
       tdSym.appendChild(symLink);
       tr.appendChild(tdSym);
 
@@ -2789,11 +2798,33 @@
     };
   }
 
+  // Bybit's kline rows are [start, open, high, low, close, volume, turnover], newest first.
+  // processCandleBars sorts by timestamp itself and only wants {t,h,l,c,v}, so the adapter is the
+  // whole integration -- no indicator math changes. Verified against Crypto.com: bar timestamps
+  // align exactly (50/50 on both 4H and Daily), so BTC correlation keeps matching by bar.
+  function adaptBybitKlines(list){
+    return (list || []).map(function(row){
+      return { t: parseInt(row[0], 10), h: row[2], l: row[3], c: row[4], v: row[5] };
+    });
+  }
+  function isBybitSourced(symbol){
+    // Crypto.com instruments always carry an underscore (BTC_USD); Bybit's never do (BTCUSDT).
+    return symbol.indexOf('_') === -1;
+  }
+  var BYBIT_TF = { '1D': 'D', '4h': '240' };
   function fetchCandles(symbol, timeframe, withBtcCorr){
-    var url = 'https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=' + encodeURIComponent(symbol) + '&timeframe=' + encodeURIComponent(timeframe) + '&count=' + CANDLE_COUNT;
+    var url, adapt;
+    if (isBybitSourced(symbol)){
+      url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(symbol)
+          + '&interval=' + (BYBIT_TF[timeframe] || 'D') + '&limit=' + CANDLE_COUNT;
+      adapt = function(d){ return adaptBybitKlines(d.result && d.result.list); };
+    } else {
+      url = 'https://api.crypto.com/exchange/v1/public/get-candlestick?instrument_name=' + encodeURIComponent(symbol) + '&timeframe=' + encodeURIComponent(timeframe) + '&count=' + CANDLE_COUNT;
+      adapt = function(d){ return (d.result && d.result.data) || []; };
+    }
     return fetchJson(url).then(function(d){
       var btcMap = (withBtcCorr && timeframe === state.candleTimeframe) ? state.btcSeries : null;
-      return processCandleBars((d.result && d.result.data) || [], btcMap);
+      return processCandleBars(adapt(d), btcMap);
     });
   }
 
@@ -3189,10 +3220,57 @@
       });
       state.byBase = byBase;
       markHealth('universe', Object.keys(byBase).length > 0, Object.keys(byBase).length + ' coins');
+      // The three inputs (this list, Bybit's tickers, CoinGecko's caps) resolve in any order, so
+      // every one of them retries the augmentation; it is idempotent and cheap.
+      augmentUniverseFromBybit();
     }).catch(function(err){
       markHealth('universe', false, null, (err && err.message) || 'network error');
       throw err;
     });
+  }
+
+  // ---------- coverage: Bybit perps that Crypto.com does not list ----------
+  // The universe used to be "Crypto.com spot listings, filtered to those with a Bybit perp",
+  // which quietly capped what could ever appear at 276 of Bybit's 761 tradeable perps. Measured
+  // against CoinGecko's top 1000, 74 of the missing ones clear this screener's own liquidity
+  // gates -- BNB, TRX, XMR, KAS, IOTA, DASH, ZEC, MNT, OKB, CAKE among them. Not an edge case.
+  //
+  // Bybit also lists several hundred tokenized equities (AAPL, NVDA, SPY...) and stablecoins on
+  // the same endpoint, so membership in CoinGecko's top 1000 is the admission test: it is
+  // self-maintaining, unlike a hand-written denylist of 300 stock tickers, and it doubles as the
+  // market-cap source those coins need anyway. Coins outside the top 1000 would fail the $20M cap
+  // gate regardless.
+  //
+  // Deliberately ADDITIVE: everything Crypto.com lists keeps its existing record and its existing
+  // data source untouched. If CoinGecko is rate-limited, state.marketCaps is empty, nothing is
+  // added, and the screener behaves exactly as it did before -- the failure mode is "no new
+  // coins", never "no coins".
+  var USE_BYBIT_UNIVERSE = true;   // single switch back to the old Crypto.com-only universe
+  function augmentUniverseFromBybit(){
+    if (!USE_BYBIT_UNIVERSE) return;
+    if (!state.bybitQuotes || !Object.keys(state.byBase).length) return;
+    var caps = state.marketCaps || {};
+    if (!Object.keys(caps).length) return;   // no admission test available yet -- wait for caps
+    var added = 0;
+    Object.keys(state.bybitQuotes).forEach(function(base){
+      if (state.byBase[base]) return;                    // Crypto.com already covers it
+      if (!caps[base]) return;                           // not in CoinGecko's top 1000
+      if (NON_CRYPTO_BASE.has(base)) return;
+      if (base.length < 2 || /\d{4,}/.test(base)) return;
+      state.byBase[base] = {
+        symbol: base + 'USDT',   // Bybit's own symbol -- also what fetchCandles keys on
+        base: base,
+        quote: 'USDT',
+        source: 'bybit'          // marks every downstream fetch for this coin
+      };
+      added++;
+    });
+    if (added){
+      state.bybitAdded = (state.bybitAdded || 0) + added;
+      markHealth('universe', true, Object.keys(state.byBase).length + ' coins ('
+        + state.bybitAdded + ' Bybit-only)');
+      render();
+    }
   }
 
   // Ticker collisions are real and dangerous: Crypto.com's ADI trades at $8.76 while Bybit's
@@ -3207,15 +3285,28 @@
     return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
       var list = (d.result && d.result.list) || [];
       var prices = {};
+      var quotes = {};
       list.forEach(function(i){
         var s = i.symbol;
         if (s && s.slice(-4) === 'USDT'){
           var px = parseFloat(i.lastPrice);
-          if (isFinite(px) && px > 0) prices[s.slice(0, -4)] = px;
+          if (isFinite(px) && px > 0){
+            var base = s.slice(0, -4);
+            prices[base] = px;
+            // Same response already carries 24h change and turnover -- free, and it is what a
+            // Bybit-sourced coin needs for its price row, since Crypto.com has no ticker for it.
+            quotes[base] = {
+              price: px,
+              mom: parseFloat(i.price24hPcnt) * 100,
+              vol: parseFloat(i.turnover24h)
+            };
+          }
         }
       });
       state.bybitPrices = prices;
+      state.bybitQuotes = quotes;
       applyBybitBases();
+      augmentUniverseFromBybit();
       markHealth('perps', true, state.bybitBases.size + ' perps matched'
         + (state.bybitMismatched.length ? ', ' + state.bybitMismatched.length + ' rejected on price' : ''));
     }).catch(function(err){
@@ -3277,6 +3368,15 @@
         if (isNaN(price)) return;
         tickers[base] = { price: price, mom: mom, vol: vol };
       });
+      // Bybit-sourced coins have no Crypto.com ticker at all; their row is priced from the Bybit
+      // ticker response already in hand. Crypto.com wins wherever both exist, so nothing that
+      // worked before changes venue.
+      Object.keys(state.byBase).forEach(function(base){
+        if (tickers[base]) return;
+        if (state.byBase[base].source !== 'bybit') return;
+        var q = state.bybitQuotes && state.bybitQuotes[base];
+        if (q && isFinite(q.price)) tickers[base] = { price: q.price, mom: q.mom, vol: q.vol };
+      });
       state.tickers = tickers;
       state.lastUpdated = Date.now();
       // Re-verify the cross-venue price agreement now that spot prices moved.
@@ -3329,6 +3429,7 @@
         health.marketcaps.lastOk = cached.at;
         health.marketcaps.degraded = false; // only complete loads are ever cached
         health.marketcaps.note = Object.keys(cached.caps).length + ' coins, reused from this browser\'s saved copy';
+        augmentUniverseFromBybit();   // caps are the admission test for Bybit-only coins
         render();
         refreshStatusIndicator();
         scheduleMarketCaps(CG_REFRESH_MS - (Date.now() - cached.at));
@@ -3388,6 +3489,7 @@
         state.marketCaps = merged;
       }
       // else: every page failed -- keep existing data untouched.
+      augmentUniverseFromBybit();   // fresh caps may admit Bybit-only coins
       var have = Object.keys(state.marketCaps).length;
       if (failed.length === 0){
         writeMcapCache(state.marketCaps);

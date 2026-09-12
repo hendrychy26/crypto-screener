@@ -82,6 +82,41 @@
   .dot.live{background:var(--positive);box-shadow:0 0 0 3px var(--pos-bg);}
   .dot.down{background:var(--negative);box-shadow:0 0 0 3px var(--neg-bg);}
   .dot.pending{background:var(--text-faint);}
+  .dot.stale{background:var(--accent);box-shadow:0 0 0 3px rgba(201,106,0,0.14);}
+
+  /* Status panel: one row per data feed, so "is this working / is this live" is answerable
+     without opening devtools. Collapsed by default -- it is a diagnostic, not a daily read. */
+  .status-btn{
+    all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:2px;
+    font-size:12.5px;color:var(--text-dim);border-radius:5px;padding:2px 6px;margin:-2px -6px;
+  }
+  .status-btn:hover{color:var(--text);background:var(--surface-2);}
+  .status-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .status-btn .chevron{font-size:8px;margin-left:4px;transition:transform 0.15s ease;}
+  .status-btn[aria-expanded="true"] .chevron{transform:rotate(90deg);}
+  @media (prefers-reduced-motion: reduce){ .status-btn .chevron{transition:none;} }
+  .status-panel{
+    display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;margin-bottom:14px;box-shadow:var(--shadow);
+  }
+  .status-panel.show{display:block;}
+  .status-panel h3{
+    margin:0 0 2px;font-size:10.5px;text-transform:uppercase;letter-spacing:0.07em;
+    color:var(--text-faint);font-weight:600;
+  }
+  .status-panel .status-sub{font-size:12px;color:var(--text-dim);margin-bottom:10px;}
+  .status-feed{
+    display:flex;align-items:baseline;gap:8px;padding:7px 0;border-top:1px solid var(--line);
+    font-size:13px;flex-wrap:wrap;
+  }
+  .status-feed .sf-name{font-weight:600;min-width:112px;}
+  .status-feed .sf-state{font-weight:600;font-size:12px;}
+  .status-feed .sf-state.ok{color:var(--positive);}
+  .status-feed .sf-state.stale{color:var(--accent);}
+  .status-feed .sf-state.down{color:var(--negative);}
+  .status-feed .sf-state.pending{color:var(--text-faint);}
+  .status-feed .sf-note{color:var(--text-dim);font-size:12px;flex:1 1 190px;}
+  .status-foot{font-size:11.5px;color:var(--text-faint);margin-top:10px;}
 
   .alert-strip{display:none;}
   .alert-strip.show{
@@ -386,12 +421,14 @@
       </div>
     </div>
     <div class="status-cluster">
-      <span><span class="dot pending" id="statusDot"></span><span id="statusText">connecting…</span></span>
+      <button class="status-btn" id="statusBtn" type="button" aria-expanded="false" aria-controls="statusPanel" title="Show which data feeds are working"><span class="dot pending" id="statusDot"></span><span id="statusText">connecting…</span><span class="chevron">▶</span></button>
       <span><span class="num" id="universeCount">–</span> coins tracked</span>
       <span>updated <span class="num" id="updatedAt">–</span></span>
       <span id="regimeBadge" class="regime-badge pill flat" title="Reading regime…"><span class="dot2"></span><span id="regimeBadgeText">Reading regime…</span></span>
     </div>
   </div>
+
+  <div class="status-panel" id="statusPanel" role="region" aria-label="Data feed status"></div>
 
   <div class="banner" id="banner"></div>
   <div class="alert-strip" id="alertStrip"></div>
@@ -575,6 +612,8 @@
         <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
         <li><strong>"Hide illiquid"</strong> drops any coin where 3+ of its last 10 candles had zero trades — thin, barely-traded coins produce stale closes that distort every technical column, Trend especially.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
+        <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
+        <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
         <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
         <li><strong>CoinGecko key</strong> (optional, in the filters panel) removes the main source of flakiness in this tool. Without one you share a public IP allowance of roughly 5-15 calls a minute, which a full scan trips constantly — and CoinGecko returns those 429s <em>without CORS headers</em>, so the browser reports them as generic network failures rather than rate limits. That is why market caps sometimes come back blank and the regime reads "unmeasurable". A free demo key from CoinGecko's developer dashboard gives you your own allowance and makes the tool markedly more reliable. <strong>It is stored only in this browser's localStorage and never written into the page</strong>, which matters because this file is served from a public repository — a key committed here would be readable by anyone and your quota would be theirs to spend.</li>
       </ul>
@@ -900,6 +939,13 @@
     if (s < 5) return 'just now';
     if (s < 60) return s + 's ago';
     return Math.round(s/60) + 'm ago';
+  }
+
+  // Network error text ends up in the status panel; it comes from outside, so never trust it
+  // as markup.
+  function escapeHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   // ---------- ranking / composite ----------
@@ -2495,26 +2541,79 @@
   // CHANGE. Re-fetch anything older than CANDLE_TTL so the status can actually move.
   var CANDLE_TTL = 600000; // 10 min; a Daily/4H phase can only change on a bar close anyway
   var candleInFlight = {};
+
+  // ---------- candle rate-limit backoff ----------
+  // Crypto.com 429s the public candlestick endpoint, and a 429 arrives without CORS headers, so
+  // the browser reports it as a generic "Failed to fetch". The original queue treated any
+  // non-ok candle as "retry immediately", so one 429 fed the next: every render re-queued every
+  // failed symbol, at ~14 requests/second across the two queues, and the page sat in a permanent
+  // error storm (hundreds of console errors) that kept ITSELF rate-limited. Two brakes now:
+  //   - a shared cooldown, doubling 5s -> 80s while failures continue, that pauses both queues;
+  //   - per-symbol backoff, so a coin that just failed is not retried on the very next render.
+  var CANDLE_GAP_MS = 200;          // primary queue spacing (was 120)
+  var CANDLE_ALT_GAP_MS = 400;      // cross-timeframe queue: strictly lower priority (was 160)
+  var candleCooldownUntil = 0;
+  var candleFailStreak = 0;
+  var candleResumeTimer = null;
+  function candleBackoffMs(attempts){
+    return Math.min(300000, 15000 * Math.pow(2, Math.max(0, attempts - 1))); // 15s .. 5 min
+  }
+  function noteCandleFailure(){
+    candleFailStreak++;
+    var wait = Math.min(80000, 5000 * Math.pow(2, Math.min(candleFailStreak - 1, 4)));
+    candleCooldownUntil = Math.max(candleCooldownUntil, Date.now() + wait);
+  }
+  // Decay rather than reset. When an endpoint is half-rate-limiting, every other call succeeds,
+  // and a full reset on one success would cancel the cooldown and walk straight back into the
+  // limit. Sustained success unwinds the backoff; an isolated one only softens it.
+  function noteCandleSuccess(){
+    candleFailStreak = Math.max(0, candleFailStreak - 1);
+    if (candleFailStreak === 0) candleCooldownUntil = 0;
+  }
+  function candlesPaused(){ return Date.now() < candleCooldownUntil; }
+  function resumeCandlesLater(){
+    clearTimeout(candleResumeTimer);
+    candleResumeTimer = setTimeout(function(){ runCandleQueue(); runAltCandleQueue(); },
+      Math.max(250, candleCooldownUntil - Date.now()) + 50);
+  }
+  // Candles load lazily, only for rows on screen, so "how many of the visible rows actually have
+  // bars" is the honest reading -- a page-1 row without candles shows no Breakout status at all.
+  function candleCoverageNote(){
+    var total = visibleForCandles.length, ok = 0;
+    visibleForCandles.forEach(function(sym){
+      var c = state.candles[sym];
+      if (c && c.status === 'ok') ok++;
+    });
+    var base = total ? ok + ' of ' + total + ' visible rows loaded (' + state.candleTimeframe + ')' : 'nothing on screen yet';
+    if (candlesPaused()) base += ' · paused ' + Math.ceil((candleCooldownUntil - Date.now())/1000) + 's to clear the rate limit';
+    return base;
+  }
   function runCandleQueue(){
     if (candleQueueRunning) return;
+    if (candlesPaused()){ resumeCandlesLater(); return; }
     var now = Date.now();
     var todo = visibleForCandles.filter(function(symbol){
       if (candleInFlight[symbol]) return false;
       var c = state.candles[symbol];
       if (!c) return true;
       if (c.status === 'pending') return false;
-      if (c.status !== 'ok') return true;
+      // A symbol that just failed waits out its own backoff instead of being retried on the
+      // very next render -- that loop was the error storm.
+      if (c.status !== 'ok') return (now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1);
       return (now - (c.fetchedAt || 0)) > CANDLE_TTL; // stale -> refresh in place
     });
     if (!todo.length) return;
     candleQueueRunning = true;
     (function next(i){
       if (i >= todo.length){ candleQueueRunning = false; return; }
+      if (candlesPaused()){ candleQueueRunning = false; resumeCandlesLater(); return; }
       var symbol = todo[i];
       // Only blank the cell if we have nothing to show; a stale refresh keeps the old values
       // visible so the table doesn't flash back to spinners every 10 minutes.
       if (!state.candles[symbol] || state.candles[symbol].status !== 'ok'){
-        state.candles[symbol] = {status:'pending'};
+        // Carry the attempt count across the pending state, or the backoff resets to 15s on
+        // every retry and never actually backs off.
+        state.candles[symbol] = {status:'pending', attempts: (state.candles[symbol] && state.candles[symbol].attempts) || 0};
       }
       candleInFlight[symbol] = true;
       fetchCandles(symbol, state.candleTimeframe, true)
@@ -2522,20 +2621,32 @@
           var prev = state.candles[symbol];
           var prevPhase = (prev && prev.status === 'ok' && prev.breakoutStatus) ? prev.breakoutStatus.phase : null;
           result.fetchedAt = Date.now();
+          if (result.status !== 'ok'){
+            // The request succeeded but the coin has too little history to compute anything.
+            // Without a backoff stamp this re-queued on every render, forever, for every such
+            // coin -- requests spent on an answer that cannot change until the coin has bars.
+            result.errAt = Date.now();
+            result.attempts = ((prev && prev.attempts) || 0) + 1;
+          }
           state.candles[symbol] = result;
           if (result.status === 'ok'){
             maybeAlertConfirming(symbol, prevPhase, result.breakoutStatus);
           }
+          noteCandleSuccess();
+          markHealth('candles', result.status === 'ok', candleCoverageNote());
         })
-        .catch(function(){
+        .catch(function(err){
+          var prevAttempts = (state.candles[symbol] && state.candles[symbol].attempts) || 0;
           if (!state.candles[symbol] || state.candles[symbol].status !== 'ok'){
-            state.candles[symbol] = {status:'error'};
+            state.candles[symbol] = {status:'error', errAt: Date.now(), attempts: prevAttempts + 1};
           }
+          noteCandleFailure();
+          markHealth('candles', false, candleCoverageNote(), (err && err.message) || 'network error');
         })
         .then(function(){
           delete candleInFlight[symbol];
           render();
-          setTimeout(function(){ next(i+1); }, 120);
+          setTimeout(function(){ next(i+1); }, CANDLE_GAP_MS);
         });
     })(0);
   }
@@ -2544,23 +2655,39 @@
     // versa) purely for the cross-timeframe Trend Agreement check -- lower priority than the
     // primary queue, so it runs as its own independent, slightly slower-paced loop.
     if (altQueueRunning) return;
+    // Never compete with the primary queue for the same rate limit: the cross-timeframe check is
+    // a nice-to-have, the visible Breakout status is not.
+    if (candleQueueRunning) return;
+    if (candlesPaused()){ resumeCandlesLater(); return; }
     var altTf = complementaryTimeframe();
+    var now = Date.now();
     var todo = visibleForCandles.filter(function(symbol){
       var c = state.candlesAlt[symbol];
-      return !c || (c.status !== 'ok' && c.status !== 'pending');
+      if (!c) return true;
+      if (c.status === 'ok' || c.status === 'pending') return false;
+      return (now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1);
     });
     if (!todo.length) return;
     altQueueRunning = true;
     (function next(i){
       if (i >= todo.length){ altQueueRunning = false; return; }
+      if (candlesPaused() || candleQueueRunning){ altQueueRunning = false; resumeCandlesLater(); return; }
       var symbol = todo[i];
-      state.candlesAlt[symbol] = {status:'pending'};
+      var altAttempts = (state.candlesAlt[symbol] && state.candlesAlt[symbol].attempts) || 0;
+      state.candlesAlt[symbol] = {status:'pending', attempts: altAttempts};
       fetchCandles(symbol, altTf)
-        .then(function(result){ state.candlesAlt[symbol] = result; })
-        .catch(function(){ state.candlesAlt[symbol] = {status:'error'}; })
+        .then(function(result){
+          if (result.status !== 'ok'){ result.errAt = Date.now(); result.attempts = altAttempts + 1; }
+          state.candlesAlt[symbol] = result;
+          noteCandleSuccess();
+        })
+        .catch(function(){
+          state.candlesAlt[symbol] = {status:'error', errAt: Date.now(), attempts: altAttempts + 1};
+          noteCandleFailure();
+        })
         .then(function(){
           render();
-          setTimeout(function(){ next(i+1); }, 160);
+          setTimeout(function(){ next(i+1); }, CANDLE_ALT_GAP_MS);
         });
     })(0);
   }
@@ -2616,6 +2743,112 @@
     if (cb) cb.addEventListener('click', function(){ alertLog = []; renderAlertStrip(); });
   }
 
+  // ---------- feed health: is each source actually working, and is its data still live? ----------
+  // The single "live" dot only ever reflected the ticker feed, so a page could look perfectly
+  // live while market caps were rate-limited and the regime was running on stale data -- exactly
+  // the failures that change which coins read as Ready. Each feed now reports for itself, with
+  // its own staleness budget, and the headline dot is the worst of the ones that matter.
+  var FEEDS = [
+    {key:'prices',    name:'Prices',        src:'Crypto.com', every:30000,  stale:120000,  critical:true,
+     what:'Live price, 24h move and volume for every coin in the table.'},
+    {key:'universe',  name:'Coin list',     src:'Crypto.com', every:null,   stale:null,    critical:true,
+     what:'Which coins exist and are tradeable. Loaded once when the page opens.'},
+    {key:'candles',   name:'Candles',       src:'Crypto.com', every:600000, stale:1500000, critical:true,
+     what:'Bar history behind Breakout status, RSI, trend, ATR and R:R.'},
+    {key:'marketcaps',name:'Market caps',   src:'CoinGecko',  every:300000, stale:1800000, critical:false,
+     what:'Market cap, 24h volume, ATH distance and multi-window momentum. The liquidity gate needs it.'},
+    {key:'regime',    name:'Regime',        src:'CoinGecko',  every:300000, stale:1800000, critical:false,
+     what:'BTC trend and dominance — decides TRADE / CAUTION / STAND DOWN.'},
+    {key:'btcseries', name:'BTC series',    src:'Crypto.com', every:300000, stale:1800000, critical:false,
+     what:'BTC\'s own bars, used for each coin\'s BTC correlation.'},
+    {key:'perps',     name:'Bybit perps',   src:'Bybit',      every:null,   stale:null,    critical:false,
+     what:'Which coins have a Bybit perp, price-verified. Only the "Bybit perp only" filter needs it.'}
+  ];
+  var health = {};
+  FEEDS.forEach(function(f){ health[f.key] = {lastOk:null, lastErr:null, note:'', errMsg:''}; });
+  function markHealth(key, ok, note, errMsg){
+    var h = health[key];
+    if (!h) return;
+    if (ok){ h.lastOk = Date.now(); h.errMsg = ''; }
+    else { h.lastErr = Date.now(); if (errMsg) h.errMsg = errMsg; }
+    if (note != null) h.note = note;
+    // Every health change moves the headline too -- otherwise the dot could read "live" while
+    // the panel right below it said something was broken.
+    refreshStatusIndicator();
+  }
+  // pending -> never answered yet; ok -> answered and fresh; stale -> last answer is older than
+  // this feed can be trusted for; down -> the last attempt failed (and nothing fresher followed).
+  function feedState(f){
+    var h = health[f.key], now = Date.now();
+    if (!h.lastOk) return h.lastErr ? 'down' : 'pending';
+    if (h.lastErr && h.lastErr > h.lastOk) return 'down';
+    if (f.stale && (now - h.lastOk) > f.stale) return 'stale';
+    return 'ok';
+  }
+  var STATE_WORD = {ok:'working', stale:'stale', down:'failing', pending:'loading…'};
+
+  function overallStatus(){
+    var worst = 'ok', anyPending = false;
+    FEEDS.forEach(function(f){
+      if (!f.critical) return;
+      var s = feedState(f);
+      if (s === 'pending') anyPending = true;
+      else if (s === 'down') worst = 'down';
+      else if (s === 'stale' && worst !== 'down') worst = 'stale';
+    });
+    if (worst === 'down') return {kind:'down', text:'data problem'};
+    if (worst === 'stale') return {kind:'stale', text:'data stale'};
+    if (anyPending) return {kind:'pending', text:'connecting…'};
+    // Degraded = everything critical is live, but a supporting feed (caps/regime) is not.
+    var degraded = FEEDS.some(function(f){ return !f.critical && (feedState(f) === 'down' || feedState(f) === 'stale'); });
+    return degraded ? {kind:'stale', text:'live · partial'} : {kind:'live', text:'live'};
+  }
+  function refreshStatusIndicator(){
+    var o = overallStatus();
+    var dot = document.getElementById('statusDot');
+    if (dot) dot.className = 'dot ' + o.kind;
+    var txt = document.getElementById('statusText');
+    if (txt) txt.textContent = o.text;
+    if (statusPanelOpen) renderStatusPanel(o);
+  }
+
+  var statusPanelOpen = false;
+  function renderStatusPanel(known){
+    var el = document.getElementById('statusPanel');
+    if (!el) return;
+    var o = known || overallStatus();
+    var rows = FEEDS.map(function(f){
+      var h = health[f.key], s = feedState(f);
+      var bits = [];
+      if (h.lastOk) bits.push('updated ' + timeAgo(h.lastOk));
+      else bits.push('no data yet');
+      if (f.every) bits.push('refreshes every ' + (f.every >= 60000 ? Math.round(f.every/60000) + ' min' : Math.round(f.every/1000) + 's'));
+      if (h.note) bits.push(h.note);
+      if (s === 'down' && h.errMsg) bits.push('last error: ' + h.errMsg);
+      return '<div class="status-feed">'
+        + '<span class="sf-name">' + f.name + '</span>'
+        + '<span class="sf-state ' + s + '">' + STATE_WORD[s] + '</span>'
+        + '<span class="sf-note">' + escapeHtml(bits.join(' · ')) + '</span>'
+        + '<span class="sf-note" style="flex-basis:100%;color:var(--text-faint);">' + f.src + ' — ' + escapeHtml(f.what) + '</span>'
+        + '</div>';
+    }).join('');
+    el.innerHTML = '<h3>Data feed status</h3>'
+      + '<div class="status-sub"><strong>' + (o.kind === 'live' ? 'Everything is working and live.'
+          : (o.kind === 'pending' ? 'Still loading.'
+          : (o.kind === 'stale' ? 'Working, but some data is older than it should be — treat verdicts as unconfirmed until it clears.'
+          : 'Something is not working. Rows may be missing data, and verdicts can be wrong.'))) + '</strong></div>'
+      + rows
+      + '<div class="status-foot">“Working” means that feed answered recently. “Stale” means its last good answer is older than this feed should be, usually CoinGecko rate-limiting a keyless browser — failed calls retry after 60 seconds on their own. Nothing here is sent anywhere; it is all measured in this browser.</div>';
+  }
+  function setStatusPanelOpen(open){
+    statusPanelOpen = open;
+    var panel = document.getElementById('statusPanel');
+    var btn = document.getElementById('statusBtn');
+    if (panel) panel.className = 'status-panel' + (open ? ' show' : '');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) refreshStatusIndicator();
+  }
+
   // ---------- data wiring (direct fetch, no MCP / connector needed) ----------
   function setStatus(kind, text){
     var dot = document.getElementById('statusDot');
@@ -2644,6 +2877,10 @@
         }
       });
       state.byBase = byBase;
+      markHealth('universe', Object.keys(byBase).length > 0, Object.keys(byBase).length + ' coins');
+    }).catch(function(err){
+      markHealth('universe', false, null, (err && err.message) || 'network error');
+      throw err;
     });
   }
 
@@ -2668,7 +2905,12 @@
       });
       state.bybitPrices = prices;
       applyBybitBases();
-    }).catch(function(){ /* Bybit-only filter just won't narrow anything if this fails */ });
+      markHealth('perps', true, state.bybitBases.size + ' perps matched'
+        + (state.bybitMismatched.length ? ', ' + state.bybitMismatched.length + ' rejected on price' : ''));
+    }).catch(function(err){
+      /* Bybit-only filter just won't narrow anything if this fails */
+      markHealth('perps', false, null, (err && err.message) || 'network error');
+    });
   }
 
   // Recomputed whenever either side's prices change, since Crypto.com tickers refresh every 30s
@@ -2709,11 +2951,13 @@
       state.lastUpdated = Date.now();
       // Re-verify the cross-venue price agreement now that spot prices moved.
       applyBybitBases();
-      setStatus('live', 'live');
+      markHealth('prices', Object.keys(tickers).length > 0, Object.keys(tickers).length + ' coins priced');
+      refreshStatusIndicator();
       hideBanner();
       render();
     }).catch(function(err){
-      setStatus('down', 'disconnected');
+      markHealth('prices', false, null, (err && err.message) || 'network error');
+      refreshStatusIndicator();
       showBanner('Couldn\'t reach Crypto.com\'s ticker feed (' + (err && err.message || 'network error') + '). Retrying automatically every 30s.', true);
     });
   }
@@ -2750,7 +2994,12 @@
       var cached = readMcapCache();
       if (cached){
         state.marketCaps = cached.caps;
+        // Dated to when the data was actually fetched, not to now -- a reused copy is exactly as
+        // old as it is, and the panel would otherwise claim a stale copy was fresh.
+        health.marketcaps.lastOk = cached.at;
+        health.marketcaps.note = Object.keys(cached.caps).length + ' coins, reused from this browser\'s saved copy';
         render();
+        refreshStatusIndicator();
         scheduleMarketCaps(CG_REFRESH_MS - (Date.now() - cached.at));
         return Promise.resolve({complete:true, fromCache:true});
       }
@@ -2808,17 +3057,26 @@
         state.marketCaps = merged;
       }
       // else: every page failed -- keep existing data untouched.
+      var have = Object.keys(state.marketCaps).length;
       if (failed.length === 0){
         writeMcapCache(state.marketCaps);
         scheduleMarketCaps(CG_REFRESH_MS);
+        markHealth('marketcaps', true, have + ' coins');
       } else {
         scheduleMarketCaps(CG_RETRY_MS, failed);
+        var msg = failed.length + ' of ' + pageNums.length + ' pages rate-limited, retrying in 60s'
+          + (have ? ' — keeping the ' + have + ' coins already loaded' : '');
+        // Any page that did land is still a real, usable update; only a total failure is "down".
+        markHealth('marketcaps', failed.length < pageNums.length, msg, 'CoinGecko rate limit / network');
       }
       render();
+      refreshStatusIndicator();
       return {complete: failed.length === 0, fromCache:false};
-    }).catch(function(){
+    }).catch(function(err){
       /* market cap is supplementary -- screener still works without it */
       scheduleMarketCaps(CG_RETRY_MS, opts.pages);
+      markHealth('marketcaps', false, 'retrying in 60s', (err && err.message) || 'network error');
+      refreshStatusIndicator();
       return {complete:false, fromCache:false};
     });
   }
@@ -2848,8 +3106,18 @@
     regimeInFlight = runRegime().then(function(){
       var measured = state.regime.btcTrend != null && state.regime.btcDDirection != null;
       scheduleRegime(measured ? CG_REFRESH_MS : CG_RETRY_MS);
-    }, function(){
+      // A regime that resolved without a dominance reading is a real answer, but a degraded one:
+      // it lands on CAUTION by missing data, which is not the same as a measured CAUTION.
+      markHealth('regime', measured, measured
+        ? state.regime.verdict + ' — BTC trend ' + state.regime.btcTrend + ', dominance ' + state.regime.btcDDirection
+        : 'CAUTION by missing data — ' + (state.regime.btcTrend == null ? 'BTC trend' : 'dominance')
+          + ' could not be measured, retrying in 60s',
+        'CoinGecko rate limit / network');
+      refreshStatusIndicator();
+    }, function(err){
       scheduleRegime(CG_RETRY_MS);
+      markHealth('regime', false, 'retrying in 60s', (err && err.message) || 'network error');
+      refreshStatusIndicator();
     }).then(function(){
       regimeCompleted = true;
       regimeInFlight = null;
@@ -2958,7 +3226,11 @@
       var map = {};
       raw.forEach(function(b){ map[b.t] = parseFloat(b.c); });
       state.btcSeries = map;
-    }).catch(function(){ /* BTC-corr just won't populate this cycle */ });
+      markHealth('btcseries', raw.length > 0, raw.length + ' bars (' + state.candleTimeframe + ')');
+    }).catch(function(err){
+      /* BTC-corr just won't populate this cycle */
+      markHealth('btcseries', false, null, (err && err.message) || 'network error');
+    });
   }
 
   var FILE_URL_TIP = 'You opened this as a <code>file://</code> page. When a browser fetches a cross-origin URL from a local file, it sends <code>Origin: null</code> — Crypto.com and Bybit echo that back literally as <code>Access-Control-Allow-Origin: null</code>, which most browsers (Chrome, Firefox, Safari all differ here) refuse to accept as a match, even though the header is technically present. <strong>Fix:</strong> serve the folder over local HTTP instead of double-clicking the file. Open a terminal, <code>cd</code> into the folder holding this file, run <code>python3 -m http.server 8000</code> (Python 3, usually already installed on macOS), then open <code>http://localhost:8000/' + (function(){ try { return location.pathname.split('/').pop() || 'crypto-screener-standalone.html'; } catch(e){ return 'crypto-screener-standalone.html'; } })() + '</code> in your browser instead of the <code>file://</code> link. No installs needed, and you can close the terminal window when you\'re done — just reopen it and re-run that command next time.';
@@ -3005,8 +3277,18 @@
     setInterval(loadBtcSeries, 300000);
   }
 
+  (function(){
+    var btn = document.getElementById('statusBtn');
+    if (btn) btn.addEventListener('click', function(){ setStatusPanelOpen(!statusPanelOpen); });
+  })();
+
   renderHead();
-  setInterval(function(){ document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated); }, 15000);
+  // Staleness is the passage of time, not an event: a feed that silently stops answering only
+  // becomes visible if something re-evaluates on a clock. Same tick that ages the "updated" label.
+  setInterval(function(){
+    document.getElementById('updatedAt').textContent = timeAgo(state.lastUpdated);
+    refreshStatusIndicator();
+  }, 15000);
   boot();
 
 })();

@@ -2953,15 +2953,24 @@
       return { t: parseInt(row[0], 10), h: row[2], l: row[3], c: row[4], v: row[5] };
     });
   }
-  function isBybitSourced(symbol){
-    // Crypto.com instruments always carry an underscore (BTC_USD); Bybit's never do (BTCUSDT).
-    return symbol.indexOf('_') === -1;
+  // Which Bybit perp to pull candles from, or null to use Crypto.com. Every coin with a VERIFIED
+  // perp now uses Bybit klines -- not just Bybit-only coins. The background scan was sending
+  // hundreds of candle requests to Crypto.com, whose rate limit answered with a wall of 429s
+  // (and, on thin spot markets, candles built from sparse trades). Bybit is the venue being
+  // traded, and its indicators were verified against Crypto.com's before: RSI identical to 0.1,
+  // Donchian levels within 0.15%, 200 EMA within 0.03%. Collision-rejected tickers (ADI, EDGE)
+  // are not in bybitBases, so they stay on Crypto.com's candles for the asset actually listed.
+  function klineSymbolFor(symbol){
+    if (symbol.indexOf('_') === -1) return symbol;   // already a Bybit symbol (Bybit-only coin)
+    var base = symbol.split('_')[0];
+    return (state.bybitBases && state.bybitBases.has(base)) ? base + 'USDT' : null;
   }
   var BYBIT_TF = { '1D': 'D', '4h': '240' };
   function fetchCandles(symbol, timeframe, withBtcCorr){
     var url, adapt;
-    if (isBybitSourced(symbol)){
-      url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(symbol)
+    var perp = klineSymbolFor(symbol);
+    if (perp){
+      url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(perp)
           + '&interval=' + (BYBIT_TF[timeframe] || 'D') + '&limit=' + CANDLE_COUNT;
       adapt = function(d){ return adaptBybitKlines(d.result && d.result.list); };
     } else {
@@ -3488,6 +3497,7 @@
       });
       state.bybitPrices = prices;
       state.bybitQuotes = quotes;
+      state.bybitQuotesAt = Date.now();   // prices older than BYBIT_QUOTE_MAX_AGE are not displayed
       applyBybitBases();
       augmentUniverseFromBybit();
       markHealth('perps', true, state.bybitBases.size + ' perps matched'
@@ -3525,7 +3535,9 @@
     var mismatched = [];
     Object.keys(prices).forEach(function(base){
       var t = state.tickers[base];
-      var spot = t && t.price;
+      // The independent Crypto.com mid, not t.price: once a coin is priced from its perp, t.price
+      // IS the Bybit price, and comparing Bybit with itself would wave every collision through.
+      var spot = t && (t.spot != null ? t.spot : t.price);
       if (spot == null || !isFinite(spot) || spot <= 0){
         bases.add(base);   // nothing to compare against yet -- don't punish it
         return;
@@ -3538,8 +3550,31 @@
     state.bybitMismatched = mismatched;
   }
 
+  // ---------- prices: what you actually trade, never a frozen last trade ----------
+  // The price column used Crypto.com's ticker field `a` -- the LAST TRADE price. On a thin spot
+  // market that can be hours old while the endpoint still answers every 30s, so the status read
+  // "live" and was right about the feed while the number itself was stale. Measured on ETHFI:
+  // spot `a` = 0.6863 from a trade 332 minutes earlier, while the live bid/ask were 0.6590/0.6615
+  // and the Bybit perp traded 0.6599 -- a 4% error shown as current, on a screen sized from.
+  //  - Coins with a verified Bybit perp are priced from THAT perp, the instrument being traded,
+  //    refreshed every 30s in the same cycle.
+  //  - Everything else uses Crypto.com's live bid/ask MIDPOINT; the last trade is used only when
+  //    there is no two-sided book at all.
+  //  - Bybit quotes older than BYBIT_QUOTE_MAX_AGE are not used, and the Prices feed says so.
+  var BYBIT_QUOTE_MAX_AGE = 90000;
+  function liveSpotPrice(t){
+    var bid = parseFloat(t.b), ask = parseFloat(t.k), last = parseFloat(t.a);
+    if (bid > 0 && ask > 0 && ask >= bid && (ask - bid) / ask < 0.05) return (bid + ask) / 2;
+    return last;   // no usable book -- last trade is all there is
+  }
   function fetchTickersOnce(){
-    return fetchJson('https://api.crypto.com/exchange/v1/public/get-tickers').then(function(d){
+    // Both venues in one cycle. loadBybitBases never rejects (it reports its own health), so a
+    // Bybit outage degrades pricing to the Crypto.com mid instead of breaking the refresh.
+    return Promise.all([
+      fetchJson('https://api.crypto.com/exchange/v1/public/get-tickers'),
+      loadBybitBases()
+    ]).then(function(res){
+      var d = res[0];
       var list = (d.result && d.result.data) || [];
       var symToBase = {};
       Object.keys(state.byBase).forEach(function(base){ symToBase[state.byBase[base].symbol] = base; });
@@ -3547,24 +3582,43 @@
       list.forEach(function(t){
         var base = symToBase[t.i];
         if (!base) return;
-        var price = parseFloat(t.a), mom = parseFloat(t.c) * 100, vol = parseFloat(t.vv);
-        if (isNaN(price)) return;
-        tickers[base] = { price: price, mom: mom, vol: vol };
+        var spot = liveSpotPrice(t), mom = parseFloat(t.c) * 100, vol = parseFloat(t.vv);
+        if (!isFinite(spot) || spot <= 0) return;
+        // `spot` is kept separately: it is the independent reference the perp identity check needs.
+        tickers[base] = { price: spot, spot: spot, mom: mom, vol: vol, priceSource: 'Crypto.com mid' };
       });
-      // Bybit-sourced coins have no Crypto.com ticker at all; their row is priced from the Bybit
-      // ticker response already in hand. Crypto.com wins wherever both exist, so nothing that
-      // worked before changes venue.
+      // Bybit-only coins have no Crypto.com ticker at all.
       Object.keys(state.byBase).forEach(function(base){
         if (tickers[base]) return;
         if (state.byBase[base].source !== 'bybit') return;
         var q = state.bybitQuotes && state.bybitQuotes[base];
-        if (q && isFinite(q.price)) tickers[base] = { price: q.price, mom: q.mom, vol: q.vol };
+        if (q && isFinite(q.price)) tickers[base] = { price: q.price, mom: q.mom, vol: q.vol, priceSource: 'Bybit perp' };
       });
       state.tickers = tickers;
       state.lastUpdated = Date.now();
-      // Re-verify the cross-venue price agreement now that spot prices moved.
+      // Verify perp identity against the independent spot mid FIRST, then price verified coins
+      // from their perp. The other order would compare the perp price with itself.
       applyBybitBases();
-      markHealth('prices', Object.keys(tickers).length > 0, Object.keys(tickers).length + ' coins priced');
+      var quotesFresh = state.bybitQuotesAt && (Date.now() - state.bybitQuotesAt) < BYBIT_QUOTE_MAX_AGE;
+      var fromPerp = 0;
+      if (quotesFresh){
+        Object.keys(tickers).forEach(function(base){
+          var q = state.bybitQuotes[base];
+          if (!q || !state.bybitBases.has(base) || !isFinite(q.price) || q.price <= 0) return;
+          tickers[base].price = q.price;
+          if (isFinite(q.mom)) tickers[base].mom = q.mom;
+          if (isFinite(q.vol)) tickers[base].vol = q.vol;
+          tickers[base].priceSource = 'Bybit perp';
+          fromPerp++;
+        });
+      }
+      var priced = Object.keys(tickers).length;
+      var note = priced + ' coins priced · ' + fromPerp + ' from the Bybit perp, '
+               + (priced - fromPerp) + ' from the Crypto.com live bid/ask mid';
+      if (!quotesFresh){
+        note += ' · Bybit quotes are stale, so perp coins are showing the Crypto.com mid instead';
+      }
+      markHealth('prices', priced > 0 ? (quotesFresh ? true : 'partial') : false, note);
       refreshStatusIndicator();
       // Only clear the banner once there is a coin list to price. Before that, a successful ticker
       // fetch every 30s would wipe the "retrying the coin list" notice between attempts.

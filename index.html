@@ -671,6 +671,8 @@
         <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
         <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
         <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system. <strong>This one setting drives everything</strong> — the sizing line, the risk % shown on the row, the R:R, and the stop-width cap — so the R:R you read is always measured against the stop you are told to place. <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
+        <li><strong>Background scan</strong> — the screener computes <em>every</em> coin that could appear under your filters, not just the rows on screen: visible rows first so the table fills quickly, then the rest of the list behind them. It used to fetch candles only for visible rows, and that broke <strong>Ready to trade only</strong> in a way that looked like "nothing qualifies": a coin cannot become Ready until it is scanned, and it was only scanned once visible. It was in fact a deadlock — the second timeframe (needed for "timeframes aligned") only loaded while the main scan was idle, which during that churn it never was, so each coin resolved as "timeframes not aligned", was filtered out, and never came back to receive the data that would have cleared it. Now a still-loading timeframe reads <span class="num">other timeframe still loading</span> rather than "not aligned", coins one fetch away from Ready stay in the filtered list and are fetched first, and the second-timeframe queue runs in its own lane instead of waiting for an idle moment that never came. Verified with Ready to trade only ticked from the first paint: the scan completed on its own, and the filtered result matched the unfiltered one coin for coin. The footer shows <span class="num">Scanning X of Y coins</span>, and says <span class="num">Scan complete</span> only once market caps have been attempted — before that the list can still grow as Bybit-only coins are admitted (measured: "complete" at 382 coins, then 430).</li>
+        <li><strong>Coin list auto-retry</strong> — the coin list is the one input every row depends on, and it used to be fetched exactly once. If that single request failed — a throttled call, or a patchy mobile connection at the moment the page opened — the page never tried again; prices kept refreshing, so it looked alive while holding zero coins. It now retries on its own (3s, 6s, 12s, 24s, 45s, then every 60s) with a banner saying so, and carries on normally the moment the list lands. Verified by forcing the first two requests to fail: recovered on the third attempt at 9 seconds, with no reload.</li>
         <li><strong>Status</strong> — click the <span class="num">● live</span> indicator at the top to see every data feed separately: prices, coin list, candles, market caps, regime, BTC series and Bybit perps, each with when it last answered and what breaks if it doesn't. The headline reads <span class="num">live</span> only when everything critical is fresh; <span class="num">live · partial</span> means prices and candles are fine but a supporting feed (usually CoinGecko) is behind; <span class="num">data stale</span> and <span class="num">data problem</span> mean verdicts on this screen may be computed from old or missing data and should not be traded off until it clears. This matters because a screener that looks alive while a feed is silently dead is the worst possible failure mode — the numbers still render, they're just wrong. Both public APIs rate-limit by IP, so failures here are usually temporary; everything retries on its own.</li>
         <li><strong>Rate-limit backoff</strong> — Crypto.com 429s the candle endpoint, and because a 429 arrives without CORS headers the browser can only report it as a generic network failure. Failed candles are retried on a per-coin backoff (15s doubling to 5 min) behind a shared cooldown (5s doubling to 80s) that pauses both candle queues, and the cross-timeframe queue never runs while the main one is working. The scan runs <strong>4 fetches in parallel</strong> while everything is healthy — one at a time left the connection idle between round trips and made a 50-row page take over a minute; it now takes about 20 seconds — and <strong>collapses to a single lane the moment anything fails</strong>, so the brake and the accelerator are the same lever. Measured with every request failing: 8 attempts in 25 seconds, against hundreds before any backoff existed. Without those brakes, one 429 fed the next: every re-render re-queued every failed coin at roughly 14 requests a second, keeping the page permanently rate-limited by its own retries.</li>
         <li>This file makes outbound requests only to <span class="num">api.crypto.com</span>, <span class="num">api.bybit.com</span> and <span class="num">api.coingecko.com</span> — all read-only market-data endpoints. It sends nothing about you; it just reads prices.</li>
@@ -1239,7 +1241,14 @@
 
     // --- Trend: genuinely up, not merely "not down" ---
     if (effTrend !== 'up') why.push('trend ' + (effTrend || 'n/a') + ', not up');
-    if (r.trendAgree !== 'agree') why.push('timeframes not aligned');
+    // Unknown is not the same as disagreeing. While the other timeframe is still loading,
+    // trendAgree is null, and reporting that as "not aligned" was half of a deadlock: the row read
+    // as blocked, "Ready to trade only" filtered it away, and a filtered-away row never stayed on
+    // screen long enough to receive the candles that would have cleared it.
+    if (r.trendAgree !== 'agree'){
+      var altLoading = r.altStatus !== 'ok' && r.altStatus !== 'error';
+      why.push(altLoading && r.trendAgree == null ? ALT_PENDING_REASON : 'timeframes not aligned');
+    }
 
     // --- Risk & reward: ATR-based stop, measured-move target (range height projected) ---
     var riskPct = null, rrRatio = null;
@@ -1576,6 +1585,17 @@
       lastRow.verdictCls = vd.cls;
       lastRow.verdictAction = vd.action;
 
+      // Background-scan bookkeeping. A coin is only finished once nothing still loading could
+      // change its verdict: its primary candles are in, and either the other timeframe is in too
+      // or the coin is already blocked by something that timeframe cannot fix.
+      lastRow.primaryResolved = lastRow.distStatus === 'ok' || lastRow.distStatus === 'error';
+      lastRow.altResolved = lastRow.altStatus === 'ok' || lastRow.altStatus === 'error';
+      // Breakout only: Accumulation's gate never reads trendAgree, so it never waits on it.
+      lastRow.awaitingAltOnly = state.mode !== 'accumulation'
+        && lastRow.primaryResolved && !lastRow.altResolved
+        && !!lastRow.tradeReasons && lastRow.tradeReasons.length === 1
+        && lastRow.tradeReasons[0] === ALT_PENDING_REASON;
+
       var opp = computeOpportunity(lastRow, effTrend);
       lastRow.opportunityScore = opp.score;
       lastRow.opportunityLabel = opp.label;
@@ -1613,15 +1633,23 @@
       // Breakout, the deep-discount-base checklist on Accumulation.
       rows = rows.filter(function(r){ return r.simpleValidEntry !== false; });
     }
+    // Every coin that could ever appear under the current filters. The background scan works
+    // through all of them -- not only the rows on screen, which is what made "Ready to trade only"
+    // come up empty: a coin cannot become Ready until it is scanned, and it used to be scanned only
+    // once it was visible. Snapshotted before the Ready filter and before search, so both the
+    // progress count and the scan cover the whole list rather than whatever survives filtering.
+    scanCandidates = rows.map(function(r){ return r.instrument; });
+    altPriorityList = rows.filter(function(r){ return r.awaitingAltOnly; })
+                          .map(function(r){ return r.instrument; });
+    scanTotal = rows.length;
+    scanDone = rows.filter(function(r){ return r.primaryResolved && !r.awaitingAltOnly; }).length;
+    allRowsReadyCount = rows.filter(function(r){ return r.verdictRank >= 3; }).length;
     if (state.tradeableOnly){
-      // Works on both tabs via the shared verdict: keep only 🟢 Ready, plus anything still
-      // loading (rank -1) so the page keeps fetching what it needs to decide.
-      // Snapshot the scan denominator here, while the list still holds every candidate -- after
-      // the filter below, resolved-but-not-ready coins are gone and the total would shrink.
-      scanTotal = rows.length;
-      scanDone = rows.filter(function(r){ return r.distStatus === 'ok' || r.distStatus === 'error'; }).length;
-      allRowsReadyCount = rows.filter(function(r){ return r.verdictRank >= 3; }).length;
-      rows = rows.filter(function(r){ return r.verdictRank >= 3 || r.verdictRank === -1 || r.verdictRank == null; });
+      // Keep Ready rows, plus anything whose verdict is still undecided: primary candles not in
+      // yet, OR the only thing between it and Ready is the other timeframe still loading. That
+      // second clause breaks the deadlock -- those rows used to be dropped right here, which
+      // stopped them ever receiving the candles that would have promoted them to Ready.
+      rows = rows.filter(function(r){ return r.verdictRank >= 3 || !r.primaryResolved || r.awaitingAltOnly; });
     }
     if (state.search){
       var q = state.search.toUpperCase();
@@ -1745,6 +1773,13 @@
   }
 
   var visibleForCandles = [];
+  // Background scan state. scanQueue = every coin that could appear under the current filters,
+  // visible ones first; altQueue = coins that need the other timeframe, nearest-to-Ready first.
+  var scanQueue = [];
+  var scanCandidates = [];
+  var altQueue = [];
+  var altPriorityList = [];
+  var ALT_PENDING_REASON = 'other timeframe still loading';
 
   function renderMessage(html){
     tbody.innerHTML = '<tr><td colspan="21" class="empty">' + html + '</td></tr>';
@@ -1766,6 +1801,15 @@
   function scanProgressText(){
     if (!state.tradeableOnly || !scanTotal) return '';
     if (scanDone >= scanTotal){
+      // Market caps are the admission test for Bybit-only coins, so until the caps load has at
+      // least been ATTEMPTED the candidate list can still grow. Measured: "Scan complete" at 382
+      // coins, then 430 once caps arrived -- and "complete" is the cue to stop waiting and act.
+      // Checks loaded OR failed: if CoinGecko is rate-limited no coins will be added, so the scan
+      // genuinely is complete, and waiting on "loaded" alone would never say so.
+      if (!health.marketcaps.lastOk && !health.marketcaps.lastErr){
+        return ' Scanned ' + scanDone + ' coins so far (' + allRowsReadyCount
+             + ' ready) — market caps still loading, more coins may be added.';
+      }
       return ' Scan complete: ' + allRowsReadyCount + ' of ' + scanTotal + ' coins are ready to trade.';
     }
     return ' Scanning ' + scanDone + ' of ' + scanTotal + ' coins (' + allRowsReadyCount
@@ -1798,6 +1842,19 @@
     var allRows = computeRows();
     var shown = allRows.slice(0, state.pageSize);
     visibleForCandles = shown.map(function(r){ return r.instrument; });
+    // What is on screen goes first so the table fills in fast, then every other candidate behind
+    // it. Rebuilt on each render and read LIVE by the queues, so a new search or filter
+    // re-prioritises immediately instead of waiting for a batch to drain.
+    var onScreen = {};
+    visibleForCandles.forEach(function(s){ onScreen[s] = true; });
+    scanQueue = visibleForCandles.concat(scanCandidates.filter(function(s){ return !onScreen[s]; }));
+    // The other timeframe: coins one fetch away from Ready first (that is what someone ticking
+    // "Ready to trade only" is waiting for), then rows on screen, which show it in TF Agree.
+    // Every other coin is already decided without it, and fetching it there anyway would roughly
+    // double the scan's request count for no change in any verdict.
+    var altFirst = {};
+    altPriorityList.forEach(function(s){ altFirst[s] = true; });
+    altQueue = altPriorityList.concat(visibleForCandles.filter(function(s){ return !altFirst[s]; }));
     scheduleCandleFetch();
 
     document.getElementById('universeCount').textContent = Object.keys(state.byBase).length;
@@ -2972,43 +3029,56 @@
   // Candles load lazily, only for rows on screen, so "how many of the visible rows actually have
   // bars" is the honest reading -- a page-1 row without candles shows no Breakout status at all.
   function candleCoverageNote(){
-    var total = visibleForCandles.length, ok = 0;
-    visibleForCandles.forEach(function(sym){
+    // Counts the whole background scan, not just the rows on screen -- the scan now covers every
+    // candidate, so "visible rows loaded" would report 50/50 while hundreds were still pending.
+    var total = scanQueue.length, ok = 0;
+    scanQueue.forEach(function(sym){
       var c = state.candles[sym];
       if (c && c.status === 'ok') ok++;
     });
-    var base = total ? ok + ' of ' + total + ' visible rows loaded (' + state.candleTimeframe + ')' : 'nothing on screen yet';
+    var base = total ? ok + ' of ' + total + ' coins scanned (' + state.candleTimeframe + ')' : 'nothing to scan yet';
     if (candlesPaused()) base += ' · paused ' + Math.ceil((candleCooldownUntil - Date.now())/1000) + 's to clear the rate limit';
     return base;
+  }
+  // The next coin the primary scan should fetch, read LIVE from scanQueue at every launch rather
+  // than snapshotted when a batch starts. The snapshot version finished its entire batch before
+  // looking at the screen again, so a search typed mid-scan waited behind up to 50 stale fetches.
+  function primaryNeedsFetch(symbol, now){
+    if (candleInFlight[symbol]) return false;
+    var c = state.candles[symbol];
+    if (!c) return true;
+    if (c.status === 'pending') return false;
+    // A symbol that just failed waits out its own backoff instead of being retried on the
+    // very next render -- that loop was the error storm.
+    if (c.status !== 'ok') return (now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1);
+    return (now - (c.fetchedAt || 0)) > CANDLE_TTL; // stale -> refresh in place
+  }
+  function nextPrimarySymbol(){
+    var now = Date.now();
+    for (var i = 0; i < scanQueue.length; i++){
+      if (primaryNeedsFetch(scanQueue[i], now)) return scanQueue[i];
+    }
+    return null;
   }
   function runCandleQueue(){
     if (candleQueueRunning) return;
     if (candlesPaused()){ resumeCandlesLater(); return; }
-    var now = Date.now();
-    var todo = visibleForCandles.filter(function(symbol){
-      if (candleInFlight[symbol]) return false;
-      var c = state.candles[symbol];
-      if (!c) return true;
-      if (c.status === 'pending') return false;
-      // A symbol that just failed waits out its own backoff instead of being retried on the
-      // very next render -- that loop was the error storm.
-      if (c.status !== 'ok') return (now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1);
-      return (now - (c.fetchedAt || 0)) > CANDLE_TTL; // stale -> refresh in place
-    });
-    if (!todo.length) return;
+    if (!nextPrimarySymbol()) return;
     candleQueueRunning = true;
     // Several fetches in flight at once. Strictly one-at-a-time made a 50-row page take ~70s of
     // pure waiting on round trips, with the connection idle between them. Concurrency collapses
     // to 1 the moment anything fails (candleFailStreak > 0), so the rate-limit brakes still win.
-    var nextIndex = 0, active = 0;
+    var active = 0;
     function pump(){
-      while (active < candleLaneCount() && nextIndex < todo.length){
+      while (active < candleLaneCount()){
         if (candlesPaused()) break;
-        startOne(todo[nextIndex++]);
+        var symbol = nextPrimarySymbol();   // startOne marks it in-flight, so it is not picked twice
+        if (!symbol) break;
+        startOne(symbol);
       }
       if (active === 0){
         candleQueueRunning = false;
-        if (nextIndex < todo.length) resumeCandlesLater();   // paused mid-batch; finish later
+        if (candlesPaused()) resumeCandlesLater();   // paused with work left; resume after cooldown
       }
     }
     function startOne(symbol){
@@ -3057,46 +3127,51 @@
     }
     pump();
   }
-  function runAltCandleQueue(){
-    // Fetches the complementary timeframe (Daily when the primary selector is 4H, or vice
-    // versa) purely for the cross-timeframe Trend Agreement check -- lower priority than the
-    // primary queue, so it runs as its own independent, slightly slower-paced loop.
-    if (altQueueRunning) return;
-    // Never compete with the primary queue for the same rate limit: the cross-timeframe check is
-    // a nice-to-have, the visible Breakout status is not.
-    if (candleQueueRunning) return;
-    if (candlesPaused()){ resumeCandlesLater(); return; }
-    var altTf = complementaryTimeframe();
+  function nextAltSymbol(){
     var now = Date.now();
-    var todo = visibleForCandles.filter(function(symbol){
+    for (var i = 0; i < altQueue.length; i++){
+      var symbol = altQueue[i];
+      var p = state.candles[symbol];
+      if (!p || p.status !== 'ok') continue;   // a coin is judged on its primary timeframe first
       var c = state.candlesAlt[symbol];
-      if (!c) return true;
-      if (c.status === 'ok' || c.status === 'pending') return false;
-      return (now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1);
-    });
-    if (!todo.length) return;
+      if (!c) return symbol;
+      if (c.status === 'ok' || c.status === 'pending') continue;
+      if ((now - (c.errAt || 0)) > candleBackoffMs(c.attempts || 1)) return symbol;
+    }
+    return null;
+  }
+  function runAltCandleQueue(){
+    // Fetches the complementary timeframe (Daily when the primary selector is 4H, or vice versa)
+    // for the cross-timeframe Trend Agreement check.
+    //
+    // It used to refuse to run at all while the primary queue was busy. Now that the primary queue
+    // scans the whole list in the background it is almost always busy, so that rule would starve
+    // this queue indefinitely -- and trend agreement is a Ready requirement, so a starved queue
+    // means nothing ever reads Ready. It keeps its own single lane alongside the primary lanes
+    // instead. The shared rate-limit cooldown still pauses both.
+    if (altQueueRunning) return;
+    if (candlesPaused()){ resumeCandlesLater(); return; }
+    var symbol = nextAltSymbol();
+    if (!symbol) return;
     altQueueRunning = true;
-    (function next(i){
-      if (i >= todo.length){ altQueueRunning = false; return; }
-      if (candlesPaused() || candleQueueRunning){ altQueueRunning = false; resumeCandlesLater(); return; }
-      var symbol = todo[i];
-      var altAttempts = (state.candlesAlt[symbol] && state.candlesAlt[symbol].attempts) || 0;
-      state.candlesAlt[symbol] = {status:'pending', attempts: altAttempts};
-      fetchCandles(symbol, altTf)
-        .then(function(result){
-          if (result.status !== 'ok'){ result.errAt = Date.now(); result.attempts = altAttempts + 1; }
-          state.candlesAlt[symbol] = result;
-          noteCandleSuccess();
-        })
-        .catch(function(){
-          state.candlesAlt[symbol] = {status:'error', errAt: Date.now(), attempts: altAttempts + 1};
-          noteCandleFailure();
-        })
-        .then(function(){
-          render();
-          setTimeout(function(){ next(i+1); }, CANDLE_ALT_GAP_MS);
-        });
-    })(0);
+    var altTf = complementaryTimeframe();
+    var altAttempts = (state.candlesAlt[symbol] && state.candlesAlt[symbol].attempts) || 0;
+    state.candlesAlt[symbol] = {status:'pending', attempts: altAttempts};   // also stops a re-pick
+    fetchCandles(symbol, altTf)
+      .then(function(result){
+        if (result.status !== 'ok'){ result.errAt = Date.now(); result.attempts = altAttempts + 1; }
+        state.candlesAlt[symbol] = result;
+        noteCandleSuccess();
+      })
+      .catch(function(){
+        state.candlesAlt[symbol] = {status:'error', errAt: Date.now(), attempts: altAttempts + 1};
+        noteCandleFailure();
+      })
+      .then(function(){
+        altQueueRunning = false;
+        render();
+        setTimeout(runAltCandleQueue, CANDLE_ALT_GAP_MS);
+      });
   }
 
   // ---------- ✅ Confirming alerts ----------
@@ -3491,7 +3566,9 @@
       applyBybitBases();
       markHealth('prices', Object.keys(tickers).length > 0, Object.keys(tickers).length + ' coins priced');
       refreshStatusIndicator();
-      hideBanner();
+      // Only clear the banner once there is a coin list to price. Before that, a successful ticker
+      // fetch every 30s would wipe the "retrying the coin list" notice between attempts.
+      if (Object.keys(state.byBase).length) hideBanner();
       render();
     }).catch(function(err){
       markHealth('prices', false, null, (err && err.message) || 'network error');
@@ -3820,6 +3897,52 @@
 
   var FILE_URL_TIP = 'You opened this as a <code>file://</code> page. When a browser fetches a cross-origin URL from a local file, it sends <code>Origin: null</code> — Crypto.com and Bybit echo that back literally as <code>Access-Control-Allow-Origin: null</code>, which most browsers (Chrome, Firefox, Safari all differ here) refuse to accept as a match, even though the header is technically present. <strong>Fix:</strong> serve the folder over local HTTP instead of double-clicking the file. Open a terminal, <code>cd</code> into the folder holding this file, run <code>python3 -m http.server 8000</code> (Python 3, usually already installed on macOS), then open <code>http://localhost:8000/' + (function(){ try { return location.pathname.split('/').pop() || 'crypto-screener-standalone.html'; } catch(e){ return 'crypto-screener-standalone.html'; } })() + '</code> in your browser instead of the <code>file://</code> link. No installs needed, and you can close the terminal window when you\'re done — just reopen it and re-run that command next time.';
 
+  // ---------- coin-list recovery ----------
+  // The instrument list used to be fetched exactly once. If that single request failed -- one
+  // throttled call, or a patchy mobile connection at the moment the page opened -- the boot chain
+  // fell into its catch, showed a banner, and never tried again. The 30-second ticker refresh kept
+  // running and re-rendering, so the page LOOKED alive while holding zero coins: "No coins match"
+  // under any filter, for the rest of the session, until a manual reload. Tickers were retried;
+  // the one thing every row depends on was not. Now it retries with backoff until it lands.
+  var UNIVERSE_RETRY_MS = [3000, 6000, 12000, 24000, 45000, 60000];   // last value repeats
+  var universeRetryTimer = null, universeAttempts = 0, universeReadyFired = false;
+  var bybitBasesPromise = null;
+
+  // The downstream chain -- tickers, then regime and BTC series -- runs once per session, whether
+  // the list arrived on the first try or the fifth.
+  function onUniverseReady(){
+    if (universeReadyFired) return;
+    universeReadyFired = true;
+    hideBanner();
+    renderMessage('Instrument list loaded — waiting on live prices…');
+    // Tickers wait for the Bybit perp list, exactly as the original Promise.all did: pricing rows
+    // before it lands would momentarily empty the table under "Bybit perp only".
+    Promise.resolve(bybitBasesPromise)
+      .then(function(){ return fetchTickersOnce(); })
+      .then(function(){ return Promise.all([loadRegime(), loadBtcSeries()]); })
+      .catch(function(){ /* each loader reports its own health and schedules its own retry */ });
+  }
+  function scheduleUniverseRetry(reason){
+    clearTimeout(universeRetryTimer);
+    var wait = UNIVERSE_RETRY_MS[Math.min(universeAttempts, UNIVERSE_RETRY_MS.length - 1)];
+    universeAttempts++;
+    setStatus('down', 'no coin list');
+    showBanner('Couldn\'t load the coin list (' + escapeHtml(reason) + '). Retrying automatically in '
+      + Math.round(wait / 1000) + 's — no need to reload.', true);
+    renderMessage('Waiting for the coin list — retry ' + universeAttempts + ' in ' + Math.round(wait / 1000) + 's…');
+    universeRetryTimer = setTimeout(tryLoadUniverse, wait);
+  }
+  function tryLoadUniverse(){
+    return loadUniverse().then(function(){
+      // An empty list is a failure too: nothing downstream can work without coins.
+      if (!Object.keys(state.byBase).length){ scheduleUniverseRetry('it came back empty'); return; }
+      universeAttempts = 0;
+      onUniverseReady();
+    }, function(err){
+      scheduleUniverseRetry((err && err.message) || 'network error');
+    });
+  }
+
   function boot(){
     renderMessage('Connecting to live market data…');
     setStatus('pending', 'connecting…');
@@ -3830,23 +3953,21 @@
     }
 
     loadBybitMinQty();
-    Promise.all([loadUniverse(), loadBybitBases()])
-      .then(function(){
-        if (!Object.keys(state.byBase).length){
-          setStatus('down', 'no data');
-          showBanner((isFileProtocol ? FILE_URL_TIP : 'Crypto.com\'s instrument list came back empty — check your internet connection or try reloading.'), true);
-          renderMessage('No instrument data received.');
-          return;
-        }
-        renderMessage('Instrument list loaded — waiting on live prices…');
-        return fetchTickersOnce();
-      })
-      .then(function(){ return Promise.all([loadRegime(), loadBtcSeries()]); })
-      .catch(function(err){
-        setStatus('down', 'disconnected');
-        showBanner((isFileProtocol ? FILE_URL_TIP : ('Couldn\'t load the crypto universe (' + (err && err.message || 'network error') + '). Try reloading, or open it in a different browser.')), true);
-        renderMessage('Could not reach live data. See the notice above.');
-      });
+    // Independent of the coin list and never rejects (it reports its own health), so it starts
+    // now; onUniverseReady() still waits for it before the first ticker fetch.
+    bybitBasesPromise = loadBybitBases();
+    if (isFileProtocol){
+      // Retrying cannot fix a file:// origin -- keep the one-shot tip rather than a retry loop.
+      loadUniverse()
+        .then(function(){ if (Object.keys(state.byBase).length) onUniverseReady(); })
+        .catch(function(){
+          setStatus('down', 'disconnected');
+          showBanner(FILE_URL_TIP, true);
+          renderMessage('Could not reach live data. See the notice above.');
+        });
+    } else {
+      tryLoadUniverse();
+    }
 
     // The regime needs BTC's market-cap change, which only exists once loadMarketCaps resolves.
     // It used to be fired standalone while loadRegime ran in the chain above, so regime almost

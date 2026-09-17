@@ -172,6 +172,17 @@
   .mode-tab:hover{color:var(--text);}
   .mode-tab.active{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);}
   .mode-tab:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .squeeze-tab-btn{
+    all:unset;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:600;
+    color:var(--text-dim);background:var(--surface);border:1px solid var(--line);margin-left:auto;
+  }
+  .squeeze-tab-btn:hover{color:var(--text);}
+  .squeeze-tab-btn.active{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);}
+  .squeeze-tab-btn:focus-visible{outline:2px solid var(--focus);outline-offset:1px;}
+  .squeeze-toolbar{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap;}
+  .squeeze-status{font-size:13px;color:var(--text-dim);}
+  .squeeze-blurb{font-size:12.5px;color:var(--text-dim);margin:0 0 14px;max-width:70ch;line-height:1.5;}
+  .squeeze-blurb code{font-family:'IBM Plex Mono',ui-monospace,monospace;}
 
   .banner{
     display:none;padding:12px 16px;border-radius:8px;margin-bottom:16px;
@@ -363,6 +374,8 @@
     .spacer{display:none;}
     .saved-flag{display:none;}
     .mode-tab{flex:1;text-align:center;padding:10px 12px;}
+    .squeeze-tab-btn{flex:1;text-align:center;padding:10px 12px;margin-left:0;}
+    .mode-tabs{flex-wrap:wrap;}
   }
 
   /* ---- Full/expert table on mobile: freeze rank+coin so you always know which row you're
@@ -473,9 +486,36 @@
   <div class="mode-tabs" id="modeTabs">
     <button class="mode-tab active" data-mode="breakout">Breakout</button>
     <button class="mode-tab" data-mode="accumulation">Accumulation</button>
+    <button class="squeeze-tab-btn" id="squeezeTabBtn" type="button"
+            title="Independent panel: 4H EMA(50/100/200) compression scan across liquid Bybit perps. Not part of the Breakout/Accumulation scoring above.">Squeeze</button>
   </div>
 
-  <div class="controls">
+  <div id="squeezePanel" hidden>
+    <div class="squeeze-toolbar">
+      <button class="hidden-link" id="squeezeScanBtn" type="button">🔍 Scan now</button>
+      <span id="squeezeStatus" class="squeeze-status">Belum discan.</span>
+    </div>
+    <p class="squeeze-blurb">
+      4H Volatility Squeeze — mencari perp Bybit likuid ($20M+ turnover 24h) di mana EMA50/100/200 sedang
+      merapat (&lt;3% dari harga) dan close berada dekat pusat EMA (&lt;2%). Sama seperti logika
+      <code>squeeze_scanner.py</code>, dijalankan langsung di browser saat Anda klik Scan.
+    </p>
+    <div class="table-wrap">
+      <table id="squeezeTable">
+        <thead>
+          <tr>
+            <th>#</th><th>Coin</th><th>Price</th><th>EMA Compression</th><th>Dist. EMA Mid</th>
+            <th>RVOL</th><th>24h Turnover</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="squeezeTbody">
+          <tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="controls" id="controlsPanel">
     <div class="controls-top">
       <div class="field search-field">
         <label for="search">Search</label>
@@ -587,7 +627,7 @@
     </div>
   </div>
 
-  <div class="table-wrap">
+  <div class="table-wrap" id="tableWrapPanel">
     <table id="mainTable">
       <thead>
         <tr id="headRow"></tr>
@@ -1653,8 +1693,18 @@
     }
     if (state.search){
       var q = state.search.toUpperCase();
-      rows = rows.filter(function(r){
-        if (r.base.indexOf(q) !== -1) return true;
+      // Ticker matches win outright. Nearly every narrative mentions BTC (regime, leading/lagging
+      // BTC), so searching "BTC" through the text matched ~430 coins and buried BTC itself at #45.
+      // Text search is only the fallback when no ticker contains the query.
+      var byTicker = rows.filter(function(r){ return r.base.indexOf(q) !== -1; });
+      if (byTicker.length){
+        byTicker.sort(function(a, b){
+          var ra = a.base === q ? 0 : a.base.indexOf(q) === 0 ? 1 : 2;
+          var rb = b.base === q ? 0 : b.base.indexOf(q) === 0 ? 1 : 2;
+          return ra - rb;
+        });
+        rows = byTicker;
+      } else rows = rows.filter(function(r){
         var narr = narrateRow(r);
         return (narr.short && narr.short.toUpperCase().indexOf(q) !== -1)
             || (narr.full && narr.full.toUpperCase().indexOf(q) !== -1);
@@ -2585,8 +2635,199 @@
     render();
   }
   document.querySelectorAll('.mode-tab').forEach(function(btn){
-    btn.addEventListener('click', function(){ setMode(btn.getAttribute('data-mode')); });
+    btn.addEventListener('click', function(){ hideSqueezePanel(); setMode(btn.getAttribute('data-mode')); });
   });
+
+  // ---------- Squeeze tab: standalone 4H EMA(50/100/200) compression scan ----------
+  // Deliberately NOT wired into MODES/state.mode/computeRows -- it is a separate live scan over
+  // Bybit's own linear-perp universe (same source and thresholds as squeeze_scanner.py), rendered
+  // into its own small table. Keeping it standalone means it cannot regress the Breakout/
+  // Accumulation scoring pipeline above, at the cost of not sharing that pipeline's caching,
+  // weights or verdicts -- this tab has none of those, by design.
+  var SQZ = {
+    minTurnover: 20000000,     // USD, same floor as squeeze_scanner.py
+    maxSpreadPct: 3,           // (max EMA - min EMA) / close
+    maxDistMidPct: 2,          // |close - EMA mid| / EMA mid
+    rvolLookback: 20,
+    rvolBreakout: 2,
+    tfMs: 4 * 60 * 60 * 1000,
+    klineLimit: 1000,          // matches squeeze_scanner.py's OHLCV_LIMIT -- a short EMA(200) warm-up
+    minBars: 400,              // (e.g. 300 bars) gives a visibly different value than a long one,
+    concurrency: 5,            // which is why this tab's numbers used to drift from the script's
+
+    gapMs: 150
+  };
+  var sqzScanning = false;
+
+  // Plain [hidden] doesn't win here -- .controls and .table-wrap set display:flex/block with the
+  // same specificity as the UA's [hidden] rule, and an author stylesheet always beats the UA
+  // stylesheet regardless of source order. Toggling style.display directly sidesteps that.
+  function hideSqueezePanel(){
+    document.getElementById('squeezeTabBtn').classList.remove('active');
+    var panel = document.getElementById('squeezePanel');
+    panel.style.display = 'none';
+    panel.setAttribute('hidden', '');
+    document.getElementById('controlsPanel').style.display = '';
+    document.getElementById('tableWrapPanel').style.display = '';
+  }
+  function showSqueezePanel(){
+    document.querySelectorAll('.mode-tab').forEach(function(btn){ btn.classList.remove('active'); });
+    document.getElementById('squeezeTabBtn').classList.add('active');
+    var panel = document.getElementById('squeezePanel');
+    panel.removeAttribute('hidden'); // the [hidden] UA rule outranks style.display:'' (which just
+    panel.style.display = 'block';  // clears any inline override rather than forcing one)
+    document.getElementById('controlsPanel').style.display = 'none';
+    document.getElementById('tableWrapPanel').style.display = 'none';
+  }
+  document.getElementById('squeezeTabBtn').addEventListener('click', showSqueezePanel);
+  document.getElementById('squeezeScanBtn').addEventListener('click', function(){
+    if (!sqzScanning) runSqueezeScan();
+  });
+
+  function sqzSetStatus(text){
+    document.getElementById('squeezeStatus').textContent = text;
+  }
+
+  // Bounded-concurrency pool: fires up to SQZ.concurrency kline fetches at once, spaced by
+  // SQZ.gapMs, so ~50 liquid perps scan in a few seconds without tripping Bybit's rate limit --
+  // same shape as squeeze_scanner.py's asyncio.Semaphore(5) + sleep(0.15).
+  function sqzMapPool(items, limit, fn){
+    return new Promise(function(resolve){
+      var results = new Array(items.length), i = 0, active = 0, done = 0;
+      if (!items.length) return resolve(results);
+      function next(){
+        while (active < limit && i < items.length){
+          (function(idx){
+            active++;
+            var item = items[idx];
+            setTimeout(function(){
+              fn(item, idx).then(function(r){ results[idx] = r; })
+                .catch(function(){ results[idx] = null; })
+                .then(function(){ active--; done++; next(); });
+            }, SQZ.gapMs);
+          })(i);
+          i++;
+        }
+        if (done === items.length) resolve(results);
+      }
+      next();
+    });
+  }
+
+  function sqzFetchUniverse(){
+    return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
+      var list = (d.result && d.result.list) || [];
+      var out = [];
+      list.forEach(function(i){
+        var sym = i.symbol;
+        var turnover = parseFloat(i.turnover24h);
+        if (sym && sym.slice(-4) === 'USDT' && isFinite(turnover) && turnover >= SQZ.minTurnover){
+          out.push({ symbol: sym, base: sym.slice(0, -4), turnover: turnover });
+        }
+      });
+      return out;
+    });
+  }
+
+  function sqzAnalyzeCandidate(cand){
+    var url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(cand.symbol)
+      + '&interval=240&limit=' + SQZ.klineLimit;
+    return fetchJson(url).then(function(d){
+      var bars = adaptBybitKlines(d.result && d.result.list)
+        .sort(function(a,b){ return b.t - a.t; }); // newest first
+      if (!bars.length) return null;
+      // Drop the still-forming candle so the signal can't repaint mid-bar.
+      if (bars[0].t + SQZ.tfMs > Date.now()) bars = bars.slice(1);
+      if (bars.length < SQZ.minBars) return null;
+
+      var ascBars = bars.slice().reverse(); // oldest -> newest, what ema() expects
+      var closes = ascBars.map(function(b){ return parseFloat(b.c); });
+      var vols = ascBars.map(function(b){ return parseFloat(b.v); });
+      var e50 = ema(closes, 50), e100 = ema(closes, 100), e200 = ema(closes, 200);
+      if (e50 == null || e100 == null || e200 == null) return null;
+
+      var last = closes[closes.length - 1];
+      var top = Math.max(e50, e100, e200), bot = Math.min(e50, e100, e200);
+      var mid = (top + bot) / 2;
+      if (!(last > 0) || !(mid > 0)) return null;
+      var spreadPct = (top - bot) / last * 100;
+      var distMidPct = (last - mid) / mid * 100;
+      if (spreadPct >= SQZ.maxSpreadPct || Math.abs(distMidPct) >= SQZ.maxDistMidPct) return null;
+
+      var n = vols.length;
+      var lastVol = vols[n - 1];
+      var priorVols = vols.slice(Math.max(0, n - 1 - SQZ.rvolLookback), n - 1);
+      var avgVol = priorVols.length ? priorVols.reduce(function(s,v){ return s+v; }, 0) / priorVols.length : 0;
+      var rvol = avgVol > 0 ? lastVol / avgVol : 0;
+      var breakout = rvol > SQZ.rvolBreakout && last > top;
+
+      return {
+        base: cand.base, price: last, spreadPct: spreadPct, distMidPct: distMidPct,
+        rvol: rvol, turnover: cand.turnover, breakout: breakout
+      };
+    }).catch(function(){ return null; });
+  }
+
+  function sqzRender(rows, scanned, total){
+    var tbody = document.getElementById('squeezeTbody');
+    tbody.innerHTML = '';
+    if (!rows.length){
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">0 sinyal dari ' + scanned + ' perp likuid (turnover ≥ $20M).</td></tr>';
+      return;
+    }
+    rows.forEach(function(r, i){
+      var tr = document.createElement('tr');
+      var breakoutTag = r.breakout ? ' <span title="RVOL &gt; 2x dan close di atas kelompok EMA">💥</span>' : '';
+      tr.innerHTML =
+        '<td class="rank num">' + (i+1) + '</td>' +
+        '<td><a class="sym-link" href="' + tvChartUrl(r.base) + '" target="_blank" rel="noopener noreferrer">' +
+          '<span class="sym">' + r.base + '</span></a>' + breakoutTag + '</td>' +
+        '<td class="num-col num">' + fmtUsd(r.price) + '</td>' +
+        '<td class="num-col num">' + r.spreadPct.toFixed(2) + '%</td>' +
+        '<td class="num-col num">' + (r.distMidPct>=0?'+':'') + r.distMidPct.toFixed(2) + '%</td>' +
+        '<td class="num-col num">' + r.rvol.toFixed(2) + 'x</td>' +
+        '<td class="num-col num">' + fmtUsd(r.turnover, {compact:true}) + '</td>' +
+        '<td></td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function runSqueezeScan(){
+    sqzScanning = true;
+    var btn = document.getElementById('squeezeScanBtn');
+    btn.disabled = true;
+    sqzSetStatus('Mengambil daftar perp likuid…');
+    sqzFetchUniverse().then(function(universe){
+      if (!universe.length){
+        sqzSetStatus('Gagal mengambil data Bybit. Coba lagi.');
+        return;
+      }
+      var doneCount = 0;
+      sqzSetStatus('Memindai 0 / ' + universe.length + ' perp…');
+      var progressTimer = setInterval(function(){
+        sqzSetStatus('Memindai ' + doneCount + ' / ' + universe.length + ' perp…');
+      }, 400);
+      return sqzMapPool(universe, SQZ.concurrency, function(cand){
+        return sqzAnalyzeCandidate(cand).then(function(r){ doneCount++; return r; });
+      }).then(function(results){
+        clearInterval(progressTimer);
+        var rows = results.filter(Boolean).sort(function(a,b){
+          if (a.breakout !== b.breakout) return a.breakout ? -1 : 1;
+          return a.spreadPct - b.spreadPct;
+        });
+        sqzRender(rows, universe.length, universe.length);
+        var breakoutCount = rows.filter(function(r){ return r.breakout; }).length;
+        sqzSetStatus('Selesai · ' + rows.length + ' sinyal dari ' + universe.length + ' perp likuid'
+          + (breakoutCount ? ' · 💥 ' + breakoutCount + ' breakout' : '')
+          + ' · ' + new Date().toLocaleTimeString());
+      });
+    }).catch(function(err){
+      sqzSetStatus('Error: ' + ((err && err.message) || 'gagal memuat data'));
+    }).then(function(){
+      sqzScanning = false;
+      btn.disabled = false;
+    });
+  }
 
   renderWeightsUI();
   updateEarlyEntryLabel();

@@ -183,6 +183,36 @@
   .squeeze-status{font-size:13px;color:var(--text-dim);}
   .squeeze-blurb{font-size:12.5px;color:var(--text-dim);margin:0 0 14px;max-width:70ch;line-height:1.5;}
   .squeeze-blurb code{font-family:'IBM Plex Mono',ui-monospace,monospace;}
+  .squeeze-filters{
+    display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:12px 16px;margin-bottom:10px;
+  }
+  .squeeze-filters .field{display:flex;flex-direction:column;gap:5px;min-width:150px;}
+  .squeeze-filters label{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-dim);}
+  .squeeze-search-field{min-width:180px;}
+  #sqzSearch, #sqzMinTurnover{
+    background:var(--surface-2);border:1px solid var(--line);border-radius:6px;color:var(--text);
+    padding:7px 9px;font-size:13px;
+  }
+  .squeeze-rvol-toggle{flex-direction:row;align-items:center;gap:7px;font-size:12.5px;color:var(--text-dim);}
+  .squeeze-presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+  .sqz-preset{
+    all:unset;cursor:pointer;padding:6px 13px;border-radius:20px;font-size:12.5px;font-weight:600;
+    color:var(--text-dim);background:var(--surface);border:1px solid var(--line);
+  }
+  .sqz-preset:hover{color:var(--text);}
+  .sqz-preset.active{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);}
+  #squeezeTable th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap;}
+  #squeezeTable th[data-sort]:hover{color:var(--text);}
+  #squeezeTable th.sqz-sorted::after{content:' ▾';}
+  #squeezeTable th.sqz-sorted.asc::after{content:' ▴';}
+  .sqz-rvol-badge{
+    display:inline-block;margin-left:6px;padding:1px 6px;border-radius:10px;font-size:10.5px;font-weight:700;
+    background:linear-gradient(90deg,#d4af37,#8fd15c);color:#111;
+  }
+  .sqz-pos{color:var(--positive);}
+  .sqz-neg{color:var(--negative);}
 
   .banner{
     display:none;padding:12px 16px;border-radius:8px;margin-bottom:16px;
@@ -496,16 +526,57 @@
       <span id="squeezeStatus" class="squeeze-status">Belum discan.</span>
     </div>
     <p class="squeeze-blurb">
-      4H Volatility Squeeze — mencari perp Bybit likuid ($20M+ turnover 24h) di mana EMA50/100/200 sedang
-      merapat (&lt;3% dari harga) dan close berada dekat pusat EMA (&lt;2%). Sama seperti logika
-      <code>squeeze_scanner.py</code>, dijalankan langsung di browser saat Anda klik Scan.
+      4H Volatility Squeeze — mencari perp Bybit likuid di mana EMA50/100/200 sedang merapat. Sama
+      seperti logika <code>squeeze_scanner.py</code>, dijalankan langsung di browser saat Anda klik Scan.
+      Filter di bawah bekerja di atas hasil scan yang sama, tanpa perlu scan ulang.
     </p>
+
+    <div class="squeeze-filters">
+      <div class="field squeeze-search-field">
+        <label for="sqzSearch">Search</label>
+        <input type="text" id="sqzSearch" placeholder="Symbol, mis. SOL">
+      </div>
+      <div class="field">
+        <label for="sqzMaxCompression">Max EMA Compression <span id="sqzMaxCompressionVal" class="num">3.0%</span></label>
+        <input type="range" id="sqzMaxCompression" min="0.2" max="6" step="0.1" value="3.0">
+      </div>
+      <div class="field">
+        <label for="sqzMinTurnover">Min 24h Turnover</label>
+        <select id="sqzMinTurnover">
+          <option value="5000000">$5M+</option>
+          <option value="10000000">$10M+</option>
+          <option value="20000000" selected>$20M+</option>
+          <option value="50000000">$50M+</option>
+          <option value="100000000">$100M+</option>
+        </select>
+      </div>
+      <label class="checkbox-field squeeze-rvol-toggle">
+        <input type="checkbox" id="sqzRvolOnly">
+        Only RVOL ≥ 1.0x
+      </label>
+    </div>
+
+    <div class="squeeze-presets">
+      <button class="hidden-link sqz-preset" data-preset="all">All Squeeze</button>
+      <button class="hidden-link sqz-preset" data-preset="hivol">A+ High Vol Squeeze</button>
+      <button class="hidden-link sqz-preset" data-preset="bullish">Bullish Squeeze</button>
+      <button class="hidden-link sqz-preset" data-preset="bearish">Bearish Squeeze</button>
+    </div>
+
+    <div id="sqzCounter" class="squeeze-status" style="margin-bottom:8px;"></div>
+
     <div class="table-wrap">
       <table id="squeezeTable">
         <thead>
           <tr>
-            <th>#</th><th>Coin</th><th>Price</th><th>EMA Compression</th><th>Dist. EMA Mid</th>
-            <th>RVOL</th><th>24h Turnover</th><th></th>
+            <th title="Rank mengikuti kolom yang sedang diurutkan; default = Squeeze Score">#</th>
+            <th data-sort="symbol">Coin</th>
+            <th data-sort="price" class="num-col">Price</th>
+            <th data-sort="emaCompression" class="num-col">EMA Compression</th>
+            <th data-sort="distEmaMid" class="num-col">Dist. EMA Mid</th>
+            <th data-sort="rvol" class="num-col">RVOL</th>
+            <th data-sort="turnover24h" class="num-col">24h Turnover</th>
+            <th data-sort="score" class="num-col">Score</th>
           </tr>
         </thead>
         <tbody id="squeezeTbody">
@@ -2645,19 +2716,30 @@
   // Accumulation scoring pipeline above, at the cost of not sharing that pipeline's caching,
   // weights or verdicts -- this tab has none of those, by design.
   var SQZ = {
-    minTurnover: 20000000,     // USD, same floor as squeeze_scanner.py
-    maxSpreadPct: 3,           // (max EMA - min EMA) / close
-    maxDistMidPct: 2,          // |close - EMA mid| / EMA mid
-    rvolLookback: 20,
+    fetchMinTurnover: 5000000, // USD floor at SCAN time -- must be <= the lowest Min Turnover
+                               // filter option below, or that option would filter nothing in
+    rvolLookback: 20,          // (raising this without raising the filter floor is a silent bug)
     rvolBreakout: 2,
     tfMs: 4 * 60 * 60 * 1000,
     klineLimit: 1000,          // matches squeeze_scanner.py's OHLCV_LIMIT -- a short EMA(200) warm-up
     minBars: 400,              // (e.g. 300 bars) gives a visibly different value than a long one,
     concurrency: 5,            // which is why this tab's numbers used to drift from the script's
-
     gapMs: 150
   };
   var sqzScanning = false;
+  var sqzRawResults = [];      // every scanned coin, unfiltered -- filters/sort below run over this
+                                // without re-scanning, so tightening a slider is instant
+  var sqzFilters = { search:'', maxCompression:3.0, minTurnover:20000000, rvolOnly:false, preset:'all', _presetDist:null };
+  var sqzSort = { key:'score', dir:'desc' };  // default = the auto-rank algorithm, not a raw column
+
+  // Score = ((3.0 - emaCompression) * 40) + (rvol * 40) + (log10(turnover24h) * 20)
+  // Higher is better: tighter compression, more active volume, deeper liquidity. The 3.0 here is
+  // the formula's own fixed anchor -- it does NOT track the Max EMA Compression slider, so scores
+  // stay comparable to each other even while you move the slider around.
+  function sqzScore(r){
+    var turnoverTerm = r.turnover24h > 0 ? Math.log10(r.turnover24h) : 0;
+    return ((3.0 - r.emaCompression) * 40) + (r.rvol * 40) + (turnoverTerm * 20);
+  }
 
   // Plain [hidden] doesn't win here -- .controls and .table-wrap set display:flex/block with the
   // same specificity as the UA's [hidden] rule, and an author stylesheet always beats the UA
@@ -2721,7 +2803,7 @@
       list.forEach(function(i){
         var sym = i.symbol;
         var turnover = parseFloat(i.turnover24h);
-        if (sym && sym.slice(-4) === 'USDT' && isFinite(turnover) && turnover >= SQZ.minTurnover){
+        if (sym && sym.slice(-4) === 'USDT' && isFinite(turnover) && turnover >= SQZ.fetchMinTurnover){
           out.push({ symbol: sym, base: sym.slice(0, -4), turnover: turnover });
         }
       });
@@ -2750,9 +2832,8 @@
       var top = Math.max(e50, e100, e200), bot = Math.min(e50, e100, e200);
       var mid = (top + bot) / 2;
       if (!(last > 0) || !(mid > 0)) return null;
-      var spreadPct = (top - bot) / last * 100;
-      var distMidPct = (last - mid) / mid * 100;
-      if (spreadPct >= SQZ.maxSpreadPct || Math.abs(distMidPct) >= SQZ.maxDistMidPct) return null;
+      var emaCompression = (top - bot) / last * 100;
+      var distEmaMid = (last - mid) / mid * 100;
 
       var n = vols.length;
       var lastVol = vols[n - 1];
@@ -2761,33 +2842,131 @@
       var rvol = avgVol > 0 ? lastVol / avgVol : 0;
       var breakout = rvol > SQZ.rvolBreakout && last > top;
 
+      // Every scanned coin is kept here, regardless of how tight its compression is -- the Max
+      // EMA Compression slider and the other filters below decide what's shown, not this fetch.
       return {
-        base: cand.base, price: last, spreadPct: spreadPct, distMidPct: distMidPct,
-        rvol: rvol, turnover: cand.turnover, breakout: breakout
+        symbol: cand.base, price: last, emaCompression: emaCompression, distEmaMid: distEmaMid,
+        rvol: rvol, turnover24h: cand.turnover, breakout: breakout
       };
     }).catch(function(){ return null; });
   }
 
-  function sqzRender(rows, scanned, total){
+  // ---------- filter + sort + render (runs client-side over sqzRawResults, no re-scan) ----------
+  var SQZ_PRESETS = {
+    all:     { rvolOnly:false, dist:null },
+    hivol:   { rvolOnly:true,  dist:null },
+    bullish: { rvolOnly:false, dist:'pos' },
+    bearish: { rvolOnly:false, dist:'neg' }
+  };
+  function sqzApplyPreset(name){
+    var p = SQZ_PRESETS[name];
+    if (!p) return;
+    sqzFilters.preset = name;
+    // Every preset is defined against the spec's baseline (<3.0% compression, $20M+ turnover),
+    // not whatever the sliders happen to be at -- so switching presets is always reproducible.
+    sqzFilters.maxCompression = 3.0;
+    sqzFilters.minTurnover = 20000000;
+    sqzFilters.rvolOnly = p.rvolOnly;
+    sqzFilters._presetDist = p.dist; // 'pos' / 'neg' / null, layered on top of the baseline above
+    document.getElementById('sqzMaxCompression').value = 3.0;
+    document.getElementById('sqzMaxCompressionVal').textContent = '3.0%';
+    document.getElementById('sqzMinTurnover').value = '20000000';
+    document.getElementById('sqzRvolOnly').checked = p.rvolOnly;
+    document.querySelectorAll('.sqz-preset').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-preset') === name);
+    });
+    sqzRenderFiltered();
+  }
+  function sqzFilteredRows(){
+    var maxComp = sqzFilters.maxCompression, minTo = sqzFilters.minTurnover;
+    var search = sqzFilters.search.trim().toUpperCase();
+    var dist = sqzFilters._presetDist;
+    var rows = sqzRawResults.filter(function(r){
+      if (r.emaCompression > maxComp) return false;
+      if (r.turnover24h < minTo) return false;
+      if (sqzFilters.rvolOnly && r.rvol < 1.0) return false;
+      if (search && r.symbol.indexOf(search) === -1) return false;
+      if (dist === 'pos' && !(r.distEmaMid > 0)) return false;
+      if (dist === 'neg' && !(r.distEmaMid < 0)) return false;
+      return true;
+    });
+    rows.forEach(function(r){ r.score = sqzScore(r); });
+    var key = sqzSort.key, dir = sqzSort.dir === 'asc' ? 1 : -1;
+    rows.sort(function(a,b){
+      var av = a[key], bv = b[key];
+      if (typeof av === 'string') return av.localeCompare(bv) * dir;
+      return ((av - bv) || 0) * dir;
+    });
+    return rows;
+  }
+  function sqzSetSort(key){
+    if (sqzSort.key === key){
+      sqzSort.dir = sqzSort.dir === 'desc' ? 'asc' : 'desc';
+    } else {
+      // Numeric columns default to strongest-first (desc); Symbol reads naturally A-Z (asc).
+      sqzSort.key = key;
+      sqzSort.dir = key === 'symbol' ? 'asc' : 'desc';
+    }
+    sqzRenderFiltered();
+  }
+  document.querySelectorAll('#squeezeTable th[data-sort]').forEach(function(th){
+    th.addEventListener('click', function(){ sqzSetSort(th.getAttribute('data-sort')); });
+  });
+  document.querySelectorAll('.sqz-preset').forEach(function(btn){
+    btn.addEventListener('click', function(){ sqzApplyPreset(btn.getAttribute('data-preset')); });
+  });
+  document.getElementById('sqzSearch').addEventListener('input', function(e){
+    sqzFilters.search = e.target.value; sqzRenderFiltered();
+  });
+  document.getElementById('sqzMaxCompression').addEventListener('input', function(e){
+    sqzFilters.maxCompression = parseFloat(e.target.value);
+    document.getElementById('sqzMaxCompressionVal').textContent = sqzFilters.maxCompression.toFixed(1) + '%';
+    sqzRenderFiltered();
+  });
+  document.getElementById('sqzMinTurnover').addEventListener('change', function(e){
+    sqzFilters.minTurnover = parseFloat(e.target.value); sqzRenderFiltered();
+  });
+  document.getElementById('sqzRvolOnly').addEventListener('change', function(e){
+    sqzFilters.rvolOnly = e.target.checked;
+    sqzFilters.preset = null; // a manual toggle no longer matches any preset's exact combination
+    document.querySelectorAll('.sqz-preset').forEach(function(btn){ btn.classList.remove('active'); });
+    sqzRenderFiltered();
+  });
+
+  function sqzRenderFiltered(){
+    var rows = sqzFilteredRows();
     var tbody = document.getElementById('squeezeTbody');
+    document.querySelectorAll('#squeezeTable th[data-sort]').forEach(function(th){
+      var active = th.getAttribute('data-sort') === sqzSort.key;
+      th.classList.toggle('sqz-sorted', active);
+      th.classList.toggle('asc', active && sqzSort.dir === 'asc');
+    });
+    document.getElementById('sqzCounter').textContent =
+      'Showing ' + rows.length + ' of ' + sqzRawResults.length + ' coins';
     tbody.innerHTML = '';
+    if (!sqzRawResults.length){
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
+      return;
+    }
     if (!rows.length){
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">0 sinyal dari ' + scanned + ' perp likuid (turnover ≥ $20M).</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Tidak ada koin yang cocok dengan filter ini.</td></tr>';
       return;
     }
     rows.forEach(function(r, i){
       var tr = document.createElement('tr');
       var breakoutTag = r.breakout ? ' <span title="RVOL &gt; 2x dan close di atas kelompok EMA">💥</span>' : '';
+      var rvolBadge = r.rvol >= 1.0 ? ' <span class="sqz-rvol-badge" title="RVOL ≥ 1.0x -- volume aktif">RVOL</span>' : '';
+      var distCls = r.distEmaMid >= 0 ? 'sqz-pos' : 'sqz-neg';
       tr.innerHTML =
         '<td class="rank num">' + (i+1) + '</td>' +
-        '<td><a class="sym-link" href="' + tvChartUrl(r.base) + '" target="_blank" rel="noopener noreferrer">' +
-          '<span class="sym">' + r.base + '</span></a>' + breakoutTag + '</td>' +
+        '<td><a class="sym-link" href="' + tvChartUrl(r.symbol) + '" target="_blank" rel="noopener noreferrer">' +
+          '<span class="sym">' + r.symbol + '</span></a>' + breakoutTag + rvolBadge + '</td>' +
         '<td class="num-col num">' + fmtUsd(r.price) + '</td>' +
-        '<td class="num-col num">' + r.spreadPct.toFixed(2) + '%</td>' +
-        '<td class="num-col num">' + (r.distMidPct>=0?'+':'') + r.distMidPct.toFixed(2) + '%</td>' +
+        '<td class="num-col num">' + r.emaCompression.toFixed(2) + '%</td>' +
+        '<td class="num-col num ' + distCls + '">' + (r.distEmaMid>=0?'+':'') + r.distEmaMid.toFixed(2) + '%</td>' +
         '<td class="num-col num">' + r.rvol.toFixed(2) + 'x</td>' +
-        '<td class="num-col num">' + fmtUsd(r.turnover, {compact:true}) + '</td>' +
-        '<td></td>';
+        '<td class="num-col num">' + fmtUsd(r.turnover24h, {compact:true}) + '</td>' +
+        '<td class="num-col num">' + r.score.toFixed(1) + '</td>';
       tbody.appendChild(tr);
     });
   }
@@ -2811,13 +2990,10 @@
         return sqzAnalyzeCandidate(cand).then(function(r){ doneCount++; return r; });
       }).then(function(results){
         clearInterval(progressTimer);
-        var rows = results.filter(Boolean).sort(function(a,b){
-          if (a.breakout !== b.breakout) return a.breakout ? -1 : 1;
-          return a.spreadPct - b.spreadPct;
-        });
-        sqzRender(rows, universe.length, universe.length);
-        var breakoutCount = rows.filter(function(r){ return r.breakout; }).length;
-        sqzSetStatus('Selesai · ' + rows.length + ' sinyal dari ' + universe.length + ' perp likuid'
+        sqzRawResults = results.filter(Boolean);
+        sqzApplyPreset('all'); // reset filters to the spec baseline and (re)render
+        var breakoutCount = sqzRawResults.filter(function(r){ return r.breakout; }).length;
+        sqzSetStatus('Selesai · ' + sqzRawResults.length + ' perp dianalisis dari ' + universe.length + ' likuid'
           + (breakoutCount ? ' · 💥 ' + breakoutCount + ' breakout' : '')
           + ' · ' + new Date().toLocaleTimeString());
       });

@@ -524,6 +524,7 @@
     <div class="squeeze-toolbar">
       <button class="hidden-link" id="squeezeScanBtn" type="button">🔍 Scan now</button>
       <span id="squeezeStatus" class="squeeze-status">Belum discan.</span>
+      <span class="saved-flag" id="sqzSavedFlag">Saved</span>
     </div>
     <p class="squeeze-blurb">
       4H Volatility Squeeze — mencari perp Bybit likuid di mana EMA50/100/200 sedang merapat. Sama
@@ -1072,13 +1073,14 @@
       flashSaved();
     } catch(e){}
   }
-  var saveFlashTimer = null;
-  function flashSaved(){
-    var el = document.getElementById('savedFlag');
+  var saveFlashTimers = {};
+  function flashSaved(elId){
+    elId = elId || 'savedFlag';
+    var el = document.getElementById(elId);
     if (!el) return;
     el.classList.add('show');
-    clearTimeout(saveFlashTimer);
-    saveFlashTimer = setTimeout(function(){ el.classList.remove('show'); }, 1400);
+    clearTimeout(saveFlashTimers[elId]);
+    saveFlashTimers[elId] = setTimeout(function(){ el.classList.remove('show'); }, 1400);
   }
 
   function fmtUsd(v, opts){
@@ -2732,6 +2734,44 @@
   var sqzFilters = { search:'', maxCompression:3.0, minTurnover:20000000, rvolOnly:false, preset:'all', _presetDist:null };
   var sqzSort = { key:'score', dir:'desc' };  // default = the auto-rank algorithm, not a raw column
 
+  // Filters/sort persist across reloads the same way the Breakout/Accumulation config does
+  // (localStorage, "_sa" suffix) -- previously every "Scan now" hard-reset to the All Squeeze
+  // preset, which is what looked like the panel "resetting" on its own.
+  var SQZ_CONFIG_KEY = 'screener_squeeze_config_sa';
+  function sqzLoadConfig(){
+    try {
+      var saved = JSON.parse(localStorage.getItem(SQZ_CONFIG_KEY) || 'null');
+      if (saved && saved.filters) Object.assign(sqzFilters, saved.filters);
+      if (saved && saved.sort) Object.assign(sqzSort, saved.sort);
+    } catch(e){}
+  }
+  function sqzSaveConfig(){
+    try {
+      localStorage.setItem(SQZ_CONFIG_KEY, JSON.stringify({
+        filters: { search: sqzFilters.search, maxCompression: sqzFilters.maxCompression,
+                   minTurnover: sqzFilters.minTurnover, rvolOnly: sqzFilters.rvolOnly,
+                   preset: sqzFilters.preset, _presetDist: sqzFilters._presetDist },
+        sort: { key: sqzSort.key, dir: sqzSort.dir }
+      }));
+      flashSaved('sqzSavedFlag');
+    } catch(e){}
+  }
+  // Push the restored (or default) filter values into the controls themselves -- otherwise the
+  // sliders/dropdown/checkbox would show their hardcoded HTML defaults while sqzFilters, loaded
+  // from storage, silently disagreed with what's on screen.
+  function sqzSyncControlsFromFilters(){
+    document.getElementById('sqzSearch').value = sqzFilters.search;
+    document.getElementById('sqzMaxCompression').value = sqzFilters.maxCompression;
+    document.getElementById('sqzMaxCompressionVal').textContent = sqzFilters.maxCompression.toFixed(1) + '%';
+    document.getElementById('sqzMinTurnover').value = String(sqzFilters.minTurnover);
+    document.getElementById('sqzRvolOnly').checked = sqzFilters.rvolOnly;
+    document.querySelectorAll('.sqz-preset').forEach(function(btn){
+      btn.classList.toggle('active', btn.getAttribute('data-preset') === sqzFilters.preset);
+    });
+  }
+  sqzLoadConfig();
+  sqzSyncControlsFromFilters();
+
   // Score = ((3.0 - emaCompression) * 40) + (rvol * 40) + (log10(turnover24h) * 20)
   // Higher is better: tighter compression, more active volume, deeper liquidity. The 3.0 here is
   // the formula's own fixed anchor -- it does NOT track the Max EMA Compression slider, so scores
@@ -2875,6 +2915,7 @@
     document.querySelectorAll('.sqz-preset').forEach(function(btn){
       btn.classList.toggle('active', btn.getAttribute('data-preset') === name);
     });
+    sqzSaveConfig();
     sqzRenderFiltered();
   }
   function sqzFilteredRows(){
@@ -2907,6 +2948,7 @@
       sqzSort.key = key;
       sqzSort.dir = key === 'symbol' ? 'asc' : 'desc';
     }
+    sqzSaveConfig();
     sqzRenderFiltered();
   }
   document.querySelectorAll('#squeezeTable th[data-sort]').forEach(function(th){
@@ -2915,21 +2957,33 @@
   document.querySelectorAll('.sqz-preset').forEach(function(btn){
     btn.addEventListener('click', function(){ sqzApplyPreset(btn.getAttribute('data-preset')); });
   });
+  // A manual change to any filter control no longer matches a preset's exact combination, so it
+  // clears the active preset highlight -- search is the one exception, since typing a symbol
+  // while "A+ High Vol Squeeze" is active is still that preset, just narrowed further.
+  function sqzClearPresetHighlight(){
+    sqzFilters.preset = null;
+    document.querySelectorAll('.sqz-preset').forEach(function(btn){ btn.classList.remove('active'); });
+  }
   document.getElementById('sqzSearch').addEventListener('input', function(e){
-    sqzFilters.search = e.target.value; sqzRenderFiltered();
+    sqzFilters.search = e.target.value; sqzSaveConfig(); sqzRenderFiltered();
   });
   document.getElementById('sqzMaxCompression').addEventListener('input', function(e){
     sqzFilters.maxCompression = parseFloat(e.target.value);
     document.getElementById('sqzMaxCompressionVal').textContent = sqzFilters.maxCompression.toFixed(1) + '%';
+    sqzClearPresetHighlight();
+    sqzSaveConfig();
     sqzRenderFiltered();
   });
   document.getElementById('sqzMinTurnover').addEventListener('change', function(e){
-    sqzFilters.minTurnover = parseFloat(e.target.value); sqzRenderFiltered();
+    sqzFilters.minTurnover = parseFloat(e.target.value);
+    sqzClearPresetHighlight();
+    sqzSaveConfig();
+    sqzRenderFiltered();
   });
   document.getElementById('sqzRvolOnly').addEventListener('change', function(e){
     sqzFilters.rvolOnly = e.target.checked;
-    sqzFilters.preset = null; // a manual toggle no longer matches any preset's exact combination
-    document.querySelectorAll('.sqz-preset').forEach(function(btn){ btn.classList.remove('active'); });
+    sqzClearPresetHighlight();
+    sqzSaveConfig();
     sqzRenderFiltered();
   });
 
@@ -2991,7 +3045,11 @@
       }).then(function(results){
         clearInterval(progressTimer);
         sqzRawResults = results.filter(Boolean);
-        sqzApplyPreset('all'); // reset filters to the spec baseline and (re)render
+        // Re-render with whatever filters/sort are already active (restored from storage, or set
+        // earlier this session) instead of forcing the All Squeeze preset -- that reset is exactly
+        // what made the panel look like it "forgot" your settings on every re-scan.
+        sqzSyncControlsFromFilters();
+        sqzRenderFiltered();
         var breakoutCount = sqzRawResults.filter(function(r){ return r.breakout; }).length;
         sqzSetStatus('Selesai · ' + sqzRawResults.length + ' perp dianalisis dari ' + universe.length + ' likuid'
           + (breakoutCount ? ' · 💥 ' + breakoutCount + ' breakout' : '')

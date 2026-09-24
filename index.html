@@ -2964,7 +2964,7 @@
       var slope = rdObvSlope(c, v);
       if (!(slope > 0)) return null;
       return { symbol: symbol.slice(0, -4), volPct: vp, obvSlope: slope };
-    });
+    }).catch(function(){ return { failed:true }; }); // a fetch error is reported, not silently "no signal"
   }
   function rdRender(){
     var q = rdCfg.search.trim().toUpperCase();
@@ -3025,9 +3025,12 @@
       rdSetStatus('Mengambil daftar perp…');
       return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
         var list = ((d.result && d.result.list) || []).filter(function(i){
-          return i.symbol && i.symbol.slice(-4) === 'USDT' && i.symbol !== 'BTCUSDT' && isFinite(parseFloat(i.turnover24h));
+          return i.symbol && i.symbol.slice(-4) === 'USDT' && isFinite(parseFloat(i.turnover24h));
         }).sort(function(a,b){ return parseFloat(b.turnover24h) - parseFloat(a.turnover24h); });
-        var syms = list.slice(0, rdCfg.topN).map(function(i){ return i.symbol; });
+        // Rank first, THEN drop BTC -- exactly what squeeze_radar.py does, so "Top 100" is the same
+        // 99 coins in both places.
+        var syms = list.slice(0, rdCfg.topN).map(function(i){ return i.symbol; })
+          .filter(function(sym){ return sym !== 'BTCUSDT'; });
         var done = 0;
         rdSetStatus('Memindai 0 / ' + syms.length + ' perp…');
         var timer = setInterval(function(){ rdSetStatus('Memindai ' + done + ' / ' + syms.length + ' perp…'); }, 400);
@@ -3036,11 +3039,11 @@
         }).then(function(results){
           clearInterval(timer);
           var skipped = results.filter(function(r){ return r && r.skipped; }).length;
-          var failed = results.filter(function(r){ return r === null || r === undefined; }).length;
-          rdRows = results.filter(function(r){ return r && !r.skipped; });
+          var failed = results.filter(function(r){ return r && r.failed; }).length;
+          rdRows = results.filter(function(r){ return r && !r.skipped && !r.failed; });
           rdScanned = syms.length;
           rdRender();
-          rdSetStatus('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp' + (skipped ? ' · ' + skipped + ' dilewati (riwayat kurang)' : '') + ' · ' + new Date().toLocaleTimeString());
+          rdSetStatus('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp' + (skipped ? ' · ' + skipped + ' dilewati (riwayat kurang)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
         });
       });
     }).catch(function(err){

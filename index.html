@@ -600,7 +600,7 @@
       Squeeze Radar (1H) — sama dengan <code>squeeze_radar.py</code>. Urutan filter, semuanya wajib lolos:
       (1) close BTC 1D <b>yang sudah tertutup</b> &ge; EMA50 (dihitung dari candle harian tertutup), kalau tidak scan dimatikan; (2) BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR);
       (3) rata-rata volume 5 candle terakhir &lt; 80% dari SMA20 volume; (4) slope OBV 20 candle &gt; 0.
-      Semua dihitung dari candle yang sudah tertutup. XAU, XAUT, PAXG, USDC, EUR dikecualikan.
+      Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF, komoditas, forex (kategori Bybit), serta XAU, XAUT, PAXG, USDC, EUR dikecualikan.
     </p>
     <div class="squeeze-filters">
       <div class="field squeeze-search-field">
@@ -2865,7 +2865,10 @@
   // Standalone like the Squeeze tab. The four filters are absolute -- no near-miss mode, no sliders.
   // The math below was checked against pandas_ta on live Bybit candles (KC/volume/OBV identical,
   // Bollinger identical once it used the sample std, ddof=1, that pandas_ta uses).
-  var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1 };   // traditional/stable assets, same list as the script
+  // Same two layers as squeeze_radar.py: Bybit's own category (tokenized stocks, ETFs, commodities,
+  // forex -- "innovation" is high-risk new CRYPTO and stays) plus hardcoded bases Bybit doesn't flag.
+  var RD_TRADITIONAL_TYPES = { stock:1, ETF:1, commodity:1, forex:1 };
+  var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1 };
   var RD = { volMaxPct: 80, candles: 200, minCandles: 100, tfMs: 3600000, concurrency: 5, gapMs: 150 };
   var rdScanning = false;
   var rdRows = [];
@@ -2943,6 +2946,18 @@
   rdSyncControls();
 
   function rdFmtPrice(x){ return x >= 100 ? x.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : String(Number(x.toPrecision(6))); }
+  // Symbols Bybit classifies as non-crypto. Fails CLOSED: if the category list can't be loaded the
+  // scan stops, rather than silently letting ~250 stock/ETF perps into a crypto screener.
+  function rdFetchTraditional(cursor, acc, page){
+    acc = acc || {}; page = page || 0;
+    var url = 'https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    return fetchJson(url).then(function(d){
+      var res = d.result || {};
+      (res.list || []).forEach(function(i){ if (RD_TRADITIONAL_TYPES[i.symbolType]) acc[i.symbol] = 1; });
+      if (res.nextPageCursor && page < 5) return rdFetchTraditional(res.nextPageCursor, acc, page + 1);
+      return acc;
+    });
+  }
   function rdSetStatus(t){ document.getElementById('radarStatus').textContent = t; }
   function rdKlines(symbol, interval){
     var url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(symbol)
@@ -3030,10 +3045,14 @@
       if (!bullish){ rdSetStatus('Dihentikan oleh BTC Guard.'); return; }
       // Stage 2 -- universe: top-N USDT perps by 24h turnover.
       rdSetStatus('Mengambil daftar perp…');
-      return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
+      return Promise.all([
+        fetchJson('https://api.bybit.com/v5/market/tickers?category=linear'),
+        rdFetchTraditional().catch(function(){ throw new Error('gagal memuat kategori instrumen Bybit (filter saham/ETF) - scan dibatalkan'); })
+      ]).then(function(res){
+        var d = res[0], trad = res[1];
         var list = ((d.result && d.result.list) || []).filter(function(i){
           return i.symbol && i.symbol.slice(-4) === 'USDT' && isFinite(parseFloat(i.turnover24h))
-            && !RD_BLACKLIST[i.symbol.slice(0, -4)];
+            && !RD_BLACKLIST[i.symbol.slice(0, -4)] && !trad[i.symbol];
         }).sort(function(a,b){ return parseFloat(b.turnover24h) - parseFloat(a.turnover24h); });
         // Blacklist, rank, slice, THEN drop BTC -- exactly what squeeze_radar.py does, so "Top 100" is the
         // same 99 coins in both places.

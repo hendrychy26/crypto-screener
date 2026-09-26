@@ -597,12 +597,12 @@
     </div>
     <div id="radarGuard" class="squeeze-status" style="margin-bottom:8px;"></div>
     <p class="squeeze-blurb">
-      Squeeze Radar (1H) dua arah — sama dengan <code>squeeze_radar.py</code>. Rezim BTC (close 1D yang sudah tertutup
-      vs EMA50) hanya memilih mode, tidak mematikan radar: di atas EMA50 = mode <b>LONG</b> (OBV slope &gt; 0, trigger Upper KC),
-      di bawah = mode <b>SHORT</b> (OBV slope &lt; 0, trigger Lower KC). Filter lain sama untuk kedua mode, semuanya wajib lolos:
-      BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR) dan rata-rata volume 5 candle terakhir &lt; 80% dari SMA20 volume.
-      Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF, komoditas, forex (kategori Bybit), serta
-      XAU, XAUT, PAXG, USDC, EUR dikecualikan.
+      Squeeze Radar (1H) — sama dengan <code>squeeze_radar.py</code>. Arah <b>ditentukan tiap koin sendiri</b>: close di atas EMA200(1H)
+      koin itu = hanya dievaluasi <b>LONG</b> (OBV di atas EMA20-nya, trigger Upper KC); di bawah = hanya <b>SHORT</b>
+      (OBV di bawah EMA20-nya, trigger Lower KC). BTC (close 1D tertutup vs EMA50) hanya label cuaca makro. Syarat untuk kedua arah,
+      semuanya wajib lolos: volume 24h &ge; $15 juta, BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR), dan rata-rata volume
+      5 candle terakhir &lt; 80% dari SMA20 volume. Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF,
+      komoditas, forex (kategori Bybit), serta XAU, XAUT, PAXG, USDC, EUR dikecualikan. Funding rate hanya informasi.
     </p>
     <div class="squeeze-filters">
       <div class="field squeeze-search-field">
@@ -626,12 +626,14 @@
             <th data-sort="symbol">Symbol</th>
             <th>Squeeze Status (Valid)</th>
             <th data-sort="volPct" class="num-col">Volume % vs SMA20</th>
-            <th data-sort="obvSlope" class="num-col">OBV Trend (Positive)</th>
-            <th data-sort="trigger" class="num-col" title="Upper Keltner Channel candle terakhir = level Trigger Long">Trigger Long (Upper KC)</th>
+            <th data-sort="trendPct" class="num-col" title="Close vs EMA200 (1H) koin itu sendiri: di atas = LONG, di bawah = SHORT">Close vs EMA200</th>
+            <th data-sort="obvGap" class="num-col" title="OBV terakhir dikurangi EMA20 dari OBV: positif = akumulasi (LONG), negatif = distribusi (SHORT)">OBV vs EMA20</th>
+            <th data-sort="trigger" class="num-col" title="LONG: Upper Keltner Channel, SHORT: Lower Keltner Channel (candle terakhir)">Trigger</th>
+            <th data-sort="funding" class="num-col" title="Funding rate saat ini (informasi saja, tidak menyaring)">Funding</th>
           </tr>
         </thead>
         <tbody id="radarTbody">
-          <tr><td colspan="6" class="empty">Klik "Scan now" untuk memulai.</td></tr>
+          <tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>
         </tbody>
       </table>
     </div>
@@ -2871,11 +2873,10 @@
   // forex -- "innovation" is high-risk new CRYPTO and stays) plus hardcoded bases Bybit doesn't flag.
   var RD_TRADITIONAL_TYPES = { stock:1, ETF:1, commodity:1, forex:1 };
   var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1 };
-  var RD = { volMaxPct: 80, candles: 200, minCandles: 100, tfMs: 3600000, concurrency: 5, gapMs: 150 };
+  var RD = { volMaxPct: 80, candles: 400, btcCandles: 200, minCandles: 210, minTurnover: 15000000, trendEma: 200, obvEma: 20, tfMs: 3600000, concurrency: 5, gapMs: 150 };
   var rdScanning = false;
   var rdRows = [];
   var rdScanned = 0;
-  var rdMode = null;                          // 'LONG' | 'SHORT', set by the BTC regime of the last scan
   var rdSort = { key:'volPct', dir:'asc' };   // driest volume first
   var rdCfg = { topN:100, search:'' };
   var RD_CONFIG_KEY = 'screener_radar_config_sa';
@@ -2913,20 +2914,16 @@
     for (k=n-5;k<n;k++) s5 += vol[k];
     return s20 > 0 ? (s5/5)/(s20/20)*100 : null;
   }
-  function rdObvSlope(c, vol){
-    var n = c.length, obv = [], run = 0;
-    for (var i=0;i<n;i++){
-      var sgn = i===0 ? 1 : (c[i]>c[i-1] ? 1 : (c[i]<c[i-1] ? -1 : 0));
-      run += sgn*vol[i]; obv.push(run);
+  function rdObvGap(c, vol){
+      var n = c.length, obv = [], run = 0;
+      for (var i=0;i<n;i++){
+        var sgn = i===0 ? 1 : (c[i]>c[i-1] ? 1 : (c[i]<c[i-1] ? -1 : 0));
+        run += sgn*vol[i]; obv.push(run);
+      }
+      var e = rdEmaSeries(obv, 20)[n-1];
+      return e == null ? null : obv[n-1] - e;       // >0 accumulation, <0 distribution. A moving average, so one outlier candle can't flip it
     }
-    var m = 20, y = obv.slice(n-m), xm = (m-1)/2, ym = 0, i2;
-    for (i2=0;i2<m;i2++) ym += y[i2];
-    ym /= m;
-    var num = 0, den = 0;
-    for (i2=0;i2<m;i2++){ num += (i2-xm)*(y[i2]-ym); den += (i2-xm)*(i2-xm); }
-    return num/den;                       // OLS slope
-  }
-  // RADAR-MATH-END
+    // RADAR-MATH-END
 
   function rdLoadConfig(){
     try {
@@ -2934,6 +2931,8 @@
       if (saved && saved.cfg) Object.assign(rdCfg, saved.cfg);
       if (saved && saved.sort) Object.assign(rdSort, saved.sort);
     } catch(e){}
+    // A sort key saved by an older version (e.g. obvSlope) no longer exists -> fall back to the default.
+    if (['symbol','volPct','trendPct','obvGap','trigger','funding'].indexOf(rdSort.key) === -1){ rdSort.key = 'volPct'; rdSort.dir = 'asc'; }
   }
   function rdSaveConfig(){
     try {
@@ -2961,40 +2960,37 @@
       return acc;
     });
   }
-  function rdApplyMode(mode){           // relabel the two mode-dependent column headers
-    var obv = document.querySelector('#radarTable th[data-sort="obvSlope"]');
-    var trg = document.querySelector('#radarTable th[data-sort="trigger"]');
-    obv.textContent = mode === 'SHORT' ? 'OBV Trend (Negative)' : 'OBV Trend (Positive)';
-    trg.textContent = mode === 'SHORT' ? 'Trigger Short (Lower KC)' : 'Trigger Long (Upper KC)';
-    trg.title = mode === 'SHORT' ? 'Lower Keltner Channel candle terakhir = level Trigger Short' : 'Upper Keltner Channel candle terakhir = level Trigger Long';
-  }
+  function rdFmtFunding(f){ return f == null ? 'n/a' : (f * 100).toFixed(4) + '%'; }
   function rdSetStatus(t){ document.getElementById('radarStatus').textContent = t; }
-  function rdKlines(symbol, interval){
+  function rdKlines(symbol, interval, limit){
     var url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(symbol)
-      + '&interval=' + interval + '&limit=' + RD.candles;
+      + '&interval=' + interval + '&limit=' + (limit || RD.candles);
     return fetchJson(url).then(function(d){
       return adaptBybitKlines(d.result && d.result.list).sort(function(a,b){ return a.t - b.t; }); // oldest -> newest
     });
   }
-  function rdEvaluate(symbol, mode){
+  function rdEvaluate(symbol){
     return rdKlines(symbol, '60').then(function(bars){
       // Last CLOSED candle only: a forming candle's volume always looks "dry".
       if (bars.length && bars[bars.length-1].t + RD.tfMs > Date.now()) bars = bars.slice(0, -1);
-      if (bars.length < RD.minCandles) return { skipped:true };
+      if (bars.length < RD.minCandles) return { skipped:true };      // no valid EMA200 yet
       var h = bars.map(function(b){ return parseFloat(b.h); });
       var l = bars.map(function(b){ return parseFloat(b.l); });
       var c = bars.map(function(b){ return parseFloat(b.c); });
       var v = bars.map(function(b){ return parseFloat(b.v); });
-      var sq = rdSqueeze(h, l, c);
-      if (!sq || !sq.ok) return null;
+      // Same order as the script (cheapest and most selective first; all filters are AND).
       var vp = rdVolPct(v);
       if (vp == null || vp >= RD.volMaxPct) return null;
-      var slope = rdObvSlope(c, v);
-      // LONG needs accumulation (OBV rising, trigger = upper Keltner); SHORT needs distribution
-      // (OBV falling, trigger = lower Keltner). Squeeze and dry volume apply identically to both.
-      if (mode === 'LONG' ? !(slope > 0) : !(slope < 0)) return null;
-      return { symbol: symbol.slice(0, -4), volPct: vp, obvSlope: slope, direction: mode,
-               trigger: mode === 'LONG' ? sq.kcu : sq.kcl };
+      var close = c[c.length-1], ema200 = rdEmaSeries(c, RD.trendEma)[c.length-1];
+      if (ema200 == null || !(ema200 > 0) || close === ema200) return null;
+      var direction = close > ema200 ? 'LONG' : 'SHORT';              // the coin's OWN trend, not BTC's
+      var sq = rdSqueeze(h, l, c);
+      if (!sq || !sq.ok) return null;
+      var gap = rdObvGap(c, v);
+      if (gap == null) return null;
+      if (direction === 'LONG' ? !(gap > 0) : !(gap < 0)) return null; // LONG = accumulation, SHORT = distribution
+      return { symbol: symbol.slice(0, -4), volPct: vp, obvGap: gap, direction: direction,
+               trendPct: (close / ema200 - 1) * 100, trigger: direction === 'LONG' ? sq.kcu : sq.kcl };
     }).catch(function(){ return { failed:true }; }); // a fetch error is reported, not silently "no signal"
   }
   function rdRender(){
@@ -3015,11 +3011,11 @@
     var tbody = document.getElementById('radarTbody');
     tbody.innerHTML = '';
     if (!rdScanned){
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
       return;
     }
     if (!rows.length){
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Tidak ada koin ' + (rdMode || '') + ' yang lolos keempat filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">Tidak ada koin yang lolos semua filter.</td></tr>';
       return;
     }
     rows.forEach(function(r, i){
@@ -3029,8 +3025,10 @@
         '<td><span class="' + (r.direction === 'LONG' ? 'sqz-pos' : 'sqz-neg') + '" style="font-weight:700;">[' + r.direction + ']</span> <a class="sym-link" href="' + tvChartUrl(r.symbol) + '" target="_blank" rel="noopener noreferrer"><span class="sym">' + r.symbol + '</span></a></td>' +
         '<td>Valid (BB &lt; KC)</td>' +
         '<td class="num-col num">' + r.volPct.toFixed(1) + '%</td>' +
-        '<td class="num-col num ' + (r.obvSlope > 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.obvSlope > 0 ? 'Positive' : 'Negative') + ' (slope ' + (r.obvSlope>=0?'+':'') + Math.round(r.obvSlope).toLocaleString('en-US') + ')</td>' +
-        '<td class="num-col num">' + rdFmtPrice(r.trigger) + '</td>';
+        '<td class="num-col num ' + (r.trendPct >= 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.trendPct >= 0 ? '+' : '') + r.trendPct.toFixed(1) + '%</td>' +
+        '<td class="num-col num ' + (r.obvGap > 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.obvGap > 0 ? 'Accumulation' : 'Distribution') + ' (' + (r.obvGap>=0?'+':'') + Math.round(r.obvGap).toLocaleString('en-US') + ')</td>' +
+        '<td class="num-col num">' + rdFmtPrice(r.trigger) + ' (' + (r.direction === 'LONG' ? 'Upper' : 'Lower') + ' KC)</td>' +
+        '<td class="num-col num">' + rdFmtFunding(r.funding) + '</td>';
       tbody.appendChild(tr);
     });
   }
@@ -3042,42 +3040,45 @@
     guard.textContent = '';
     rdRows = []; rdScanned = 0; rdRender();
     rdSetStatus('Memeriksa BTC (1D)…');
-    // Stage 1 -- BTC regime picks the mode (LONG above EMA50, SHORT below); it never stops the scan.
-    rdKlines('BTCUSDT', 'D').then(function(btc){
-      // Static macro filter: drop the still-forming daily candle so the close AND the EMA50 come from
-      // closed candles only (same as squeeze_radar.py) -- an intraday wick can't flip the regime.
+    // BTC is a macro "weather" label only: it never stops the scan and never sets a direction. A failure
+    // to read it must not stop the scan either.
+    rdKlines('BTCUSDT', 'D', RD.btcCandles).then(function(btc){   // 200 daily bars, same as the script: an EMA depends on how much history seeds it
+      // Closed daily candles only, so an intraday wick can't flip the label (same as squeeze_radar.py).
       if (btc.length && btc[btc.length-1].t + 86400000 > Date.now()) btc = btc.slice(0, -1);
       if (btc.length < 55) throw new Error('riwayat BTC 1D tidak cukup untuk EMA50');
       var closes = btc.map(function(b){ return parseFloat(b.c); });
       var ema50 = rdEmaSeries(closes, 50)[closes.length - 1];
       var last = closes[closes.length - 1];
       var bullish = last >= ema50;
-      var mode = bullish ? 'LONG' : 'SHORT';
-      rdMode = mode; rdApplyMode(mode);
-      guard.innerHTML = 'BTC 1D close (tertutup) <b>' + last.toLocaleString('en-US',{maximumFractionDigits:2}) + '</b> vs EMA50 <b>'
+      guard.innerHTML = 'Makro: BTC 1D close (tertutup) <b>' + last.toLocaleString('en-US',{maximumFractionDigits:2}) + '</b> vs EMA50 <b>'
         + ema50.toLocaleString('en-US',{maximumFractionDigits:2}) + '</b> — '
-        + (bullish ? '<span class="sqz-pos">✅ BTC Bullish → mode LONG</span> (OBV naik, trigger Upper KC).'
-                   : '<span class="sqz-neg">🔻 BTC Bearish → mode SHORT</span> (OBV turun, trigger Lower KC).');
-      // Stage 2 -- universe: top-N USDT perps by 24h turnover.
+        + (bullish ? '<span class="sqz-pos">🟢 BTC Bullish</span>' : '<span class="sqz-neg">🔴 BTC Bearish</span>')
+        + ' <span class="muted">(label saja; arah tiap koin ditentukan oleh EMA200 koin itu sendiri)</span>';
+    }).catch(function(){
+      guard.textContent = 'Makro: ⚪ BTC tidak terbaca (scan tetap dilanjutkan).';
+    }).then(function(){
+      // Stage 2 -- universe: liquid USDT perps (24h turnover >= $15M), top-N by turnover.
       rdSetStatus('Mengambil daftar perp…');
       return Promise.all([
         fetchJson('https://api.bybit.com/v5/market/tickers?category=linear'),
         rdFetchTraditional().catch(function(){ throw new Error('gagal memuat kategori instrumen Bybit (filter saham/ETF) - scan dibatalkan'); })
       ]).then(function(res){
-        var d = res[0], trad = res[1];
+        var d = res[0], trad = res[1], funding = {};
         var list = ((d.result && d.result.list) || []).filter(function(i){
           return i.symbol && i.symbol.slice(-4) === 'USDT' && isFinite(parseFloat(i.turnover24h))
+            && parseFloat(i.turnover24h) >= RD.minTurnover                   // liquidity guard, before any scanning
             && !RD_BLACKLIST[i.symbol.slice(0, -4)] && !trad[i.symbol];
         }).sort(function(a,b){ return parseFloat(b.turnover24h) - parseFloat(a.turnover24h); });
-        // Blacklist, rank, slice, THEN drop BTC -- exactly what squeeze_radar.py does, so "Top 100" is the
-        // same 99 coins in both places.
-        var syms = list.slice(0, rdCfg.topN).map(function(i){ return i.symbol; })
-          .filter(function(sym){ return sym !== 'BTCUSDT'; });
+        // Floor, blacklist, rank, slice, THEN drop BTC -- exactly what squeeze_radar.py does.
+        var syms = list.slice(0, rdCfg.topN).map(function(i){
+          var f = parseFloat(i.fundingRate); funding[i.symbol] = isFinite(f) ? f : null;   // funding comes free in the same call
+          return i.symbol;
+        }).filter(function(sym){ return sym !== 'BTCUSDT'; });
         var done = 0;
-        rdSetStatus('Memindai 0 / ' + syms.length + ' perp…');
-        var timer = setInterval(function(){ rdSetStatus('Memindai ' + done + ' / ' + syms.length + ' perp…'); }, 400);
+        rdSetStatus('Memindai 0 / ' + syms.length + ' perp likuid…');
+        var timer = setInterval(function(){ rdSetStatus('Memindai ' + done + ' / ' + syms.length + ' perp likuid…'); }, 400);
         return sqzMapPool(syms, RD.concurrency, function(sym){
-          return rdEvaluate(sym, mode).then(function(r){ done++; return r; });
+          return rdEvaluate(sym).then(function(r){ done++; if (r && !r.skipped && !r.failed) r.funding = funding[sym]; return r; });
         }).then(function(results){
           clearInterval(timer);
           var skipped = results.filter(function(r){ return r && r.skipped; }).length;
@@ -3085,7 +3086,7 @@
           rdRows = results.filter(function(r){ return r && !r.skipped && !r.failed; });
           rdScanned = syms.length;
           rdRender();
-          rdSetStatus('Selesai · mode ' + mode + ' · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp' + (skipped ? ' · ' + skipped + ' dilewati (riwayat kurang)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
+          rdSetStatus('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp likuid (≥ $15M)' + (skipped ? ' · ' + skipped + ' dilewati (riwayat < 210 candle)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
         });
       });
     }).catch(function(err){
@@ -3102,7 +3103,7 @@
     th.addEventListener('click', function(){
       var k = th.getAttribute('data-sort');
       if (rdSort.key === k) rdSort.dir = rdSort.dir === 'asc' ? 'desc' : 'asc';
-      else { rdSort.key = k; rdSort.dir = k === 'symbol' ? 'asc' : (k === 'volPct' ? 'asc' : 'desc'); }
+      else { rdSort.key = k; rdSort.dir = (k === 'symbol' || k === 'volPct') ? 'asc' : 'desc'; }
       rdSaveConfig(); rdRender();
     });
   });

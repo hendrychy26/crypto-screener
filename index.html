@@ -583,7 +583,7 @@
           </tr>
         </thead>
         <tbody id="squeezeTbody">
-          <tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>
+          <tr><td colspan="10" class="empty">Klik "Scan now" untuk memulai.</td></tr>
         </tbody>
       </table>
     </div>
@@ -602,7 +602,7 @@
       (OBV di bawah EMA20-nya, trigger Lower KC). BTC (close 1D tertutup vs EMA50) hanya label cuaca makro. Syarat untuk kedua arah,
       semuanya wajib lolos: volume 24h &ge; $15 juta, BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR), dan rata-rata volume
       5 candle terakhir &lt; 80% dari SMA20 volume. Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF,
-      komoditas, forex (kategori Bybit), serta XAU, XAUT, PAXG, USDC, EUR dikecualikan. Funding rate hanya informasi.
+      komoditas, forex (kategori Bybit), serta XAU, XAUT, PAXG, USDC, EUR dikecualikan. Funding rate, Ketegangan (ATR14 / SMA30 dari ATR14) dan OI Delta 4 jam hanya informasi (tidak menyaring); OI hanya diambil untuk koin yang lolos.
     </p>
     <div class="squeeze-filters">
       <div class="field squeeze-search-field">
@@ -630,10 +630,12 @@
             <th data-sort="obvGap" class="num-col" title="OBV terakhir dikurangi EMA20 dari OBV: positif = akumulasi (LONG), negatif = distribusi (SHORT)">OBV vs EMA20</th>
             <th data-sort="trigger" class="num-col" title="LONG: Upper Keltner Channel, SHORT: Lower Keltner Channel (candle terakhir)">Trigger</th>
             <th data-sort="funding" class="num-col" title="Funding rate saat ini (informasi saja, tidak menyaring)">Funding</th>
+            <th data-sort="tension" class="num-col" title="Ketegangan karet = ATR(14) / SMA30 dari ATR(14) x 100. Makin kecil = kompresi makin ketat dibanding rata-rata 30 bar sebelumnya">Ketegangan (ATR)</th>
+            <th data-sort="oiDelta" class="num-col" title="Perubahan Open Interest (jumlah kontrak) 4 jam terakhir. Hanya diambil untuk koin yang lolos semua filter">OI Delta</th>
           </tr>
         </thead>
         <tbody id="radarTbody">
-          <tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>
+          <tr><td colspan="10" class="empty">Klik "Scan now" untuk memulai.</td></tr>
         </tbody>
       </table>
     </div>
@@ -2873,7 +2875,7 @@
   // forex -- "innovation" is high-risk new CRYPTO and stays) plus hardcoded bases Bybit doesn't flag.
   var RD_TRADITIONAL_TYPES = { stock:1, ETF:1, commodity:1, forex:1 };
   var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1 };
-  var RD = { volMaxPct: 80, candles: 400, btcCandles: 200, minCandles: 210, minTurnover: 15000000, trendEma: 200, obvEma: 20, tfMs: 3600000, concurrency: 5, gapMs: 150 };
+  var RD = { volMaxPct: 80, candles: 400, btcCandles: 200, minCandles: 210, minTurnover: 15000000, trendEma: 200, obvEma: 20, oiCap: 15, tfMs: 3600000, concurrency: 5, gapMs: 150 };
   var rdScanning = false;
   var rdRows = [];
   var rdScanned = 0;
@@ -2923,6 +2925,18 @@
       var e = rdEmaSeries(obv, 20)[n-1];
       return e == null ? null : obv[n-1] - e;       // >0 accumulation, <0 distribution. A moving average, so one outlier candle can't flip it
     }
+    function rdAtrTension(h, l, c){
+      var n = c.length;
+      if (n < 14 + 30 + 2) return null;
+      var tr = [];
+      for (var i=1;i<n;i++) tr.push(Math.max(h[i]-l[i], Math.abs(h[i]-c[i-1]), Math.abs(l[i]-c[i-1])));
+      var a = tr[0], atr = [a];
+      for (var j=1;j<tr.length;j++){ a = a + (tr[j]-a)/14; atr.push(a); }   // Wilder ATR14 (ewm alpha=1/14, adjust=False), like pandas_ta
+      var m = 0, k;
+      for (k=atr.length-30;k<atr.length;k++) m += atr[k];
+      m /= 30;
+      return m > 0 ? atr[atr.length-1] / m * 100 : null;                    // lower = tighter squeeze than its own 30-bar average
+    }
     // RADAR-MATH-END
 
   function rdLoadConfig(){
@@ -2932,7 +2946,7 @@
       if (saved && saved.sort) Object.assign(rdSort, saved.sort);
     } catch(e){}
     // A sort key saved by an older version (e.g. obvSlope) no longer exists -> fall back to the default.
-    if (['symbol','volPct','trendPct','obvGap','trigger','funding'].indexOf(rdSort.key) === -1){ rdSort.key = 'volPct'; rdSort.dir = 'asc'; }
+    if (['symbol','volPct','trendPct','obvGap','trigger','funding','tension','oiDelta'].indexOf(rdSort.key) === -1){ rdSort.key = 'volPct'; rdSort.dir = 'asc'; }
   }
   function rdSaveConfig(){
     try {
@@ -2960,6 +2974,26 @@
       return acc;
     });
   }
+  // OI is fetched ONLY for coins that already passed every filter (never for the whole universe), capped
+  // at RD.oiCap requests. % change of open interest in CONTRACTS over 4H, matched by timestamp; falls back to
+  // the 1H change (labelled) when the point 4h back is missing. Mirrors oi_delta_pct() in the script.
+  function rdFetchOi(symbol){
+    return fetchJson('https://api.bybit.com/v5/market/open-interest?category=linear&symbol=' + encodeURIComponent(symbol) + '&intervalTime=1h&limit=6')
+      .then(function(d){
+        var pts = ((d.result && d.result.list) || []).map(function(x){ return [parseInt(x.timestamp, 10), parseFloat(x.openInterest)]; })
+          .filter(function(p){ return p[0] && p[1] > 0; }).sort(function(a,b){ return a[0]-b[0]; });
+        if (pts.length < 2) return { delta: null, win: '4H' };
+        var by = {}; pts.forEach(function(p){ by[p[0]] = p[1]; });
+        var last = pts[pts.length-1], win = '4H', prev = by[last[0] - 4*3600000];
+        if (prev == null){ prev = by[last[0] - 3600000]; win = '1H'; }
+        return prev > 0 ? { delta: (last[1]/prev - 1) * 100, win: win } : { delta: null, win: win };
+      }).catch(function(){ return { delta: null, win: '4H' }; });
+  }
+  function rdFmtOi(r){
+    if (r.oiWindow == null) return '…';
+    return r.oiDelta == null ? 'n/a' : (r.oiDelta >= 0 ? '+' : '') + r.oiDelta.toFixed(1) + '% (' + r.oiWindow + ')';
+  }
+  function rdFmtTension(t){ return t == null ? 'n/a' : t.toFixed(1) + '%'; }
   function rdFmtFunding(f){ return f == null ? 'n/a' : (f * 100).toFixed(4) + '%'; }
   function rdSetStatus(t){ document.getElementById('radarStatus').textContent = t; }
   function rdKlines(symbol, interval, limit){
@@ -2990,7 +3024,8 @@
       if (gap == null) return null;
       if (direction === 'LONG' ? !(gap > 0) : !(gap < 0)) return null; // LONG = accumulation, SHORT = distribution
       return { symbol: symbol.slice(0, -4), volPct: vp, obvGap: gap, direction: direction,
-               trendPct: (close / ema200 - 1) * 100, trigger: direction === 'LONG' ? sq.kcu : sq.kcl };
+               trendPct: (close / ema200 - 1) * 100, trigger: direction === 'LONG' ? sq.kcu : sq.kcl,
+               tension: rdAtrTension(h, l, c), oiDelta: null, oiWindow: null };   // ATR work only for coins that passed
     }).catch(function(){ return { failed:true }; }); // a fetch error is reported, not silently "no signal"
   }
   function rdRender(){
@@ -2999,7 +3034,9 @@
     var dir = rdSort.dir === 'asc' ? 1 : -1, key = rdSort.key;
     rows.sort(function(a,b){
       if (typeof a[key] === 'string') return a[key].localeCompare(b[key]) * dir;
-      return (a[key] - b[key]) * dir;
+      var av = a[key], bv = b[key], an = av == null || isNaN(av), bn = bv == null || isNaN(bv);
+      if (an || bn) return an === bn ? 0 : (an ? 1 : -1);          // unknown values (n/a, not yet loaded) always last
+      return (av - bv) * dir;
     });
     document.querySelectorAll('#radarTable th[data-sort]').forEach(function(th){
       var on = th.getAttribute('data-sort') === rdSort.key;
@@ -3011,11 +3048,11 @@
     var tbody = document.getElementById('radarTbody');
     tbody.innerHTML = '';
     if (!rdScanned){
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
       return;
     }
     if (!rows.length){
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Tidak ada koin yang lolos semua filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">Tidak ada koin yang lolos semua filter.</td></tr>';
       return;
     }
     rows.forEach(function(r, i){
@@ -3028,7 +3065,9 @@
         '<td class="num-col num ' + (r.trendPct >= 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.trendPct >= 0 ? '+' : '') + r.trendPct.toFixed(1) + '%</td>' +
         '<td class="num-col num ' + (r.obvGap > 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.obvGap > 0 ? 'Accumulation' : 'Distribution') + ' (' + (r.obvGap>=0?'+':'') + Math.round(r.obvGap).toLocaleString('en-US') + ')</td>' +
         '<td class="num-col num">' + rdFmtPrice(r.trigger) + ' (' + (r.direction === 'LONG' ? 'Upper' : 'Lower') + ' KC)</td>' +
-        '<td class="num-col num">' + rdFmtFunding(r.funding) + '</td>';
+        '<td class="num-col num">' + rdFmtFunding(r.funding) + '</td>' +
+        '<td class="num-col num">' + rdFmtTension(r.tension) + '</td>' +
+        '<td class="num-col num ' + (r.oiDelta == null ? '' : (r.oiDelta >= 0 ? 'sqz-pos' : 'sqz-neg')) + '">' + rdFmtOi(r) + '</td>';
       tbody.appendChild(tr);
     });
   }
@@ -3086,7 +3125,16 @@
           rdRows = results.filter(function(r){ return r && !r.skipped && !r.failed; });
           rdScanned = syms.length;
           rdRender();
-          rdSetStatus('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp likuid (≥ $15M)' + (skipped ? ' · ' + skipped + ' dilewati (riwayat < 210 candle)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
+          var doneMsg = ('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp likuid (≥ $15M)' + (skipped ? ' · ' + skipped + ' dilewati (riwayat < 210 candle)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
+          rdSetStatus(doneMsg + ' · mengambil OI…');
+          var oiTargets = rdRows.slice().sort(function(a,b){ return a.volPct - b.volPct; }).slice(0, RD.oiCap);   // passing coins only, capped
+          return sqzMapPool(oiTargets, 3, function(r){
+            return rdFetchOi(r.symbol + 'USDT').then(function(o){ r.oiDelta = o.delta; r.oiWindow = o.win; rdRender(); return o; });
+          }).then(function(){
+            rdRows.forEach(function(r){ if (r.oiWindow == null) r.oiWindow = '4H'; });   // beyond the cap: shown as n/a
+            rdRender();
+            rdSetStatus(doneMsg + (rdRows.length > RD.oiCap ? ' · OI dibatasi ' + RD.oiCap + ' koin' : ''));
+          });
         });
       });
     }).catch(function(err){
@@ -3103,7 +3151,7 @@
     th.addEventListener('click', function(){
       var k = th.getAttribute('data-sort');
       if (rdSort.key === k) rdSort.dir = rdSort.dir === 'asc' ? 'desc' : 'asc';
-      else { rdSort.key = k; rdSort.dir = (k === 'symbol' || k === 'volPct') ? 'asc' : 'desc'; }
+      else { rdSort.key = k; rdSort.dir = (k === 'symbol' || k === 'volPct' || k === 'tension') ? 'asc' : 'desc'; }
       rdSaveConfig(); rdRender();
     });
   });
@@ -3301,11 +3349,11 @@
       'Showing ' + rows.length + ' of ' + sqzRawResults.length + ' coins';
     tbody.innerHTML = '';
     if (!sqzRawResults.length){
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">Klik "Scan now" untuk memulai.</td></tr>';
       return;
     }
     if (!rows.length){
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">Tidak ada koin yang cocok dengan filter ini.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">Tidak ada koin yang cocok dengan filter ini.</td></tr>';
       return;
     }
     rows.forEach(function(r, i){

@@ -597,10 +597,12 @@
     </div>
     <div id="radarGuard" class="squeeze-status" style="margin-bottom:8px;"></div>
     <p class="squeeze-blurb">
-      Squeeze Radar (1H) — sama dengan <code>squeeze_radar.py</code>. Urutan filter, semuanya wajib lolos:
-      (1) close BTC 1D <b>yang sudah tertutup</b> &ge; EMA50 (dihitung dari candle harian tertutup), kalau tidak scan dimatikan; (2) BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR);
-      (3) rata-rata volume 5 candle terakhir &lt; 80% dari SMA20 volume; (4) slope OBV 20 candle &gt; 0.
-      Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF, komoditas, forex (kategori Bybit), serta XAU, XAUT, PAXG, USDC, EUR dikecualikan.
+      Squeeze Radar (1H) dua arah — sama dengan <code>squeeze_radar.py</code>. Rezim BTC (close 1D yang sudah tertutup
+      vs EMA50) hanya memilih mode, tidak mematikan radar: di atas EMA50 = mode <b>LONG</b> (OBV slope &gt; 0, trigger Upper KC),
+      di bawah = mode <b>SHORT</b> (OBV slope &lt; 0, trigger Lower KC). Filter lain sama untuk kedua mode, semuanya wajib lolos:
+      BB(20,2) sepenuhnya di dalam KC(20, 1.5&times;ATR) dan rata-rata volume 5 candle terakhir &lt; 80% dari SMA20 volume.
+      Semua dihitung dari candle yang sudah tertutup. Saham tokenisasi, ETF, komoditas, forex (kategori Bybit), serta
+      XAU, XAUT, PAXG, USDC, EUR dikecualikan.
     </p>
     <div class="squeeze-filters">
       <div class="field squeeze-search-field">
@@ -2873,6 +2875,7 @@
   var rdScanning = false;
   var rdRows = [];
   var rdScanned = 0;
+  var rdMode = null;                          // 'LONG' | 'SHORT', set by the BTC regime of the last scan
   var rdSort = { key:'volPct', dir:'asc' };   // driest volume first
   var rdCfg = { topN:100, search:'' };
   var RD_CONFIG_KEY = 'screener_radar_config_sa';
@@ -2958,6 +2961,13 @@
       return acc;
     });
   }
+  function rdApplyMode(mode){           // relabel the two mode-dependent column headers
+    var obv = document.querySelector('#radarTable th[data-sort="obvSlope"]');
+    var trg = document.querySelector('#radarTable th[data-sort="trigger"]');
+    obv.textContent = mode === 'SHORT' ? 'OBV Trend (Negative)' : 'OBV Trend (Positive)';
+    trg.textContent = mode === 'SHORT' ? 'Trigger Short (Lower KC)' : 'Trigger Long (Upper KC)';
+    trg.title = mode === 'SHORT' ? 'Lower Keltner Channel candle terakhir = level Trigger Short' : 'Upper Keltner Channel candle terakhir = level Trigger Long';
+  }
   function rdSetStatus(t){ document.getElementById('radarStatus').textContent = t; }
   function rdKlines(symbol, interval){
     var url = 'https://api.bybit.com/v5/market/kline?category=linear&symbol=' + encodeURIComponent(symbol)
@@ -2966,7 +2976,7 @@
       return adaptBybitKlines(d.result && d.result.list).sort(function(a,b){ return a.t - b.t; }); // oldest -> newest
     });
   }
-  function rdEvaluate(symbol){
+  function rdEvaluate(symbol, mode){
     return rdKlines(symbol, '60').then(function(bars){
       // Last CLOSED candle only: a forming candle's volume always looks "dry".
       if (bars.length && bars[bars.length-1].t + RD.tfMs > Date.now()) bars = bars.slice(0, -1);
@@ -2980,8 +2990,11 @@
       var vp = rdVolPct(v);
       if (vp == null || vp >= RD.volMaxPct) return null;
       var slope = rdObvSlope(c, v);
-      if (!(slope > 0)) return null;
-      return { symbol: symbol.slice(0, -4), volPct: vp, obvSlope: slope, trigger: sq.kcu };
+      // LONG needs accumulation (OBV rising, trigger = upper Keltner); SHORT needs distribution
+      // (OBV falling, trigger = lower Keltner). Squeeze and dry volume apply identically to both.
+      if (mode === 'LONG' ? !(slope > 0) : !(slope < 0)) return null;
+      return { symbol: symbol.slice(0, -4), volPct: vp, obvSlope: slope, direction: mode,
+               trigger: mode === 'LONG' ? sq.kcu : sq.kcl };
     }).catch(function(){ return { failed:true }; }); // a fetch error is reported, not silently "no signal"
   }
   function rdRender(){
@@ -3006,17 +3019,17 @@
       return;
     }
     if (!rows.length){
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">Tidak ada koin yang lolos keempat filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">Tidak ada koin ' + (rdMode || '') + ' yang lolos keempat filter.</td></tr>';
       return;
     }
     rows.forEach(function(r, i){
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td class="rank num">' + (i+1) + '</td>' +
-        '<td><a class="sym-link" href="' + tvChartUrl(r.symbol) + '" target="_blank" rel="noopener noreferrer"><span class="sym">' + r.symbol + '</span></a></td>' +
+        '<td><span class="' + (r.direction === 'LONG' ? 'sqz-pos' : 'sqz-neg') + '" style="font-weight:700;">[' + r.direction + ']</span> <a class="sym-link" href="' + tvChartUrl(r.symbol) + '" target="_blank" rel="noopener noreferrer"><span class="sym">' + r.symbol + '</span></a></td>' +
         '<td>Valid (BB &lt; KC)</td>' +
         '<td class="num-col num">' + r.volPct.toFixed(1) + '%</td>' +
-        '<td class="num-col num sqz-pos">Positive (slope ' + (r.obvSlope>=0?'+':'') + Math.round(r.obvSlope).toLocaleString('en-US') + ')</td>' +
+        '<td class="num-col num ' + (r.obvSlope > 0 ? 'sqz-pos' : 'sqz-neg') + '">' + (r.obvSlope > 0 ? 'Positive' : 'Negative') + ' (slope ' + (r.obvSlope>=0?'+':'') + Math.round(r.obvSlope).toLocaleString('en-US') + ')</td>' +
         '<td class="num-col num">' + rdFmtPrice(r.trigger) + '</td>';
       tbody.appendChild(tr);
     });
@@ -3029,7 +3042,7 @@
     guard.textContent = '';
     rdRows = []; rdScanned = 0; rdRender();
     rdSetStatus('Memeriksa BTC (1D)…');
-    // Stage 1 -- BTC Beta Guard. Uses today's latest 1D close (forming candle included), per spec.
+    // Stage 1 -- BTC regime picks the mode (LONG above EMA50, SHORT below); it never stops the scan.
     rdKlines('BTCUSDT', 'D').then(function(btc){
       // Static macro filter: drop the still-forming daily candle so the close AND the EMA50 come from
       // closed candles only (same as squeeze_radar.py) -- an intraday wick can't flip the regime.
@@ -3039,10 +3052,12 @@
       var ema50 = rdEmaSeries(closes, 50)[closes.length - 1];
       var last = closes[closes.length - 1];
       var bullish = last >= ema50;
+      var mode = bullish ? 'LONG' : 'SHORT';
+      rdMode = mode; rdApplyMode(mode);
       guard.innerHTML = 'BTC 1D close (tertutup) <b>' + last.toLocaleString('en-US',{maximumFractionDigits:2}) + '</b> vs EMA50 <b>'
         + ema50.toLocaleString('en-US',{maximumFractionDigits:2}) + '</b> — '
-        + (bullish ? '✅ Bullish, scan dilanjutkan.' : '<span class="sqz-neg">BTC Bearish (Harga &lt; EMA50). Squeeze Screener dimatikan untuk melindungi modal.</span>');
-      if (!bullish){ rdSetStatus('Dihentikan oleh BTC Guard.'); return; }
+        + (bullish ? '<span class="sqz-pos">✅ BTC Bullish → mode LONG</span> (OBV naik, trigger Upper KC).'
+                   : '<span class="sqz-neg">🔻 BTC Bearish → mode SHORT</span> (OBV turun, trigger Lower KC).');
       // Stage 2 -- universe: top-N USDT perps by 24h turnover.
       rdSetStatus('Mengambil daftar perp…');
       return Promise.all([
@@ -3062,7 +3077,7 @@
         rdSetStatus('Memindai 0 / ' + syms.length + ' perp…');
         var timer = setInterval(function(){ rdSetStatus('Memindai ' + done + ' / ' + syms.length + ' perp…'); }, 400);
         return sqzMapPool(syms, RD.concurrency, function(sym){
-          return rdEvaluate(sym).then(function(r){ done++; return r; });
+          return rdEvaluate(sym, mode).then(function(r){ done++; return r; });
         }).then(function(results){
           clearInterval(timer);
           var skipped = results.filter(function(r){ return r && r.skipped; }).length;
@@ -3070,7 +3085,7 @@
           rdRows = results.filter(function(r){ return r && !r.skipped && !r.failed; });
           rdScanned = syms.length;
           rdRender();
-          rdSetStatus('Selesai · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp' + (skipped ? ' · ' + skipped + ' dilewati (riwayat kurang)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
+          rdSetStatus('Selesai · mode ' + mode + ' · ' + rdRows.length + ' lolos dari ' + syms.length + ' perp' + (skipped ? ' · ' + skipped + ' dilewati (riwayat kurang)' : '') + (failed ? ' · ' + failed + ' error' : '') + ' · ' + new Date().toLocaleTimeString());
         });
       });
     }).catch(function(err){

@@ -2783,6 +2783,29 @@
     concurrency: 5,            // which is why this tab's numbers used to drift from the script's
     gapMs: 150
   };
+  // Two layers keep non-crypto instruments out of this tab too (same denylist as NON_CRYPTO_BASE
+  // and RD_BLACKLIST above): Bybit's own symbolType category, plus a hardcoded backup for bases
+  // Bybit doesn't flag as traditional (tokenized gold, stablecoins, fiat).
+  var SQZ_TRADITIONAL_TYPES = { stock:1, ETF:1, commodity:1, forex:1 };
+  var SQZ_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1,
+    TEVA:1, VNO:1, ES:1, SPX:1, MTD:1, USAT:1, HPP:1,
+    XAG:1, XPT:1, XPD:1, GWEI:1, NATGAS:1,
+    USDT:1, TUSD:1, GUSD:1, HUSD:1, USD1:1, USDS:1, USDU:1, PYUSD:1, EURC:1, FRAX:1, SUSD:1, STABLE:1,
+    ANTHROPICIPO:1, OPENAIIPO:1, SPCX:1,
+    SPY:1, QQQ:1, IWM:1, SMH:1, XLE:1, XBI:1, EWJ:1, EWT:1, EWZ:1, EWY:1, UVXY:1, SOXL:1, SOXS:1, TQQQ:1, SQQQ:1, TZA:1
+  };
+  // Fails CLOSED like rdFetchTraditional: if the category list can't be loaded, sqzFetchUniverse
+  // rejects rather than silently letting stock/ETF perps into this scan.
+  function sqzFetchTraditional(cursor, acc, page){
+    acc = acc || {}; page = page || 0;
+    var url = 'https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    return fetchJson(url).then(function(d){
+      var res = d.result || {};
+      (res.list || []).forEach(function(i){ if (SQZ_TRADITIONAL_TYPES[i.symbolType]) acc[i.symbol] = 1; });
+      if (res.nextPageCursor && page < 5) return sqzFetchTraditional(res.nextPageCursor, acc, page + 1);
+      return acc;
+    });
+  }
   var sqzScanning = false;
   var sqzRawResults = [];      // every scanned coin, unfiltered -- filters/sort below run over this
                                 // without re-scanning, so tightening a slider is instant
@@ -2875,7 +2898,15 @@
   // Same two layers as squeeze_radar.py: Bybit's own category (tokenized stocks, ETFs, commodities,
   // forex -- "innovation" is high-risk new CRYPTO and stays) plus hardcoded bases Bybit doesn't flag.
   var RD_TRADITIONAL_TYPES = { stock:1, ETF:1, commodity:1, forex:1 };
-  var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1 };
+  // Same denylist as NON_CRYPTO_BASE above (tokenized stocks, indices, ETFs, tokenized commodities, fiat/stablecoin bases) --
+  // Bybit's symbolType alone doesn't reliably flag every one of these, same gap that motivated NON_CRYPTO_BASE.
+  var RD_BLACKLIST = { XAU:1, XAUT:1, PAXG:1, USDC:1, EUR:1,
+    TEVA:1, VNO:1, ES:1, SPX:1, MTD:1, USAT:1, HPP:1,
+    XAG:1, XPT:1, XPD:1, GWEI:1, NATGAS:1,
+    USDT:1, TUSD:1, GUSD:1, HUSD:1, USD1:1, USDS:1, USDU:1, PYUSD:1, EURC:1, FRAX:1, SUSD:1, STABLE:1,
+    ANTHROPICIPO:1, OPENAIIPO:1, SPCX:1,
+    SPY:1, QQQ:1, IWM:1, SMH:1, XLE:1, XBI:1, EWJ:1, EWT:1, EWZ:1, EWY:1, UVXY:1, SOXL:1, SOXS:1, TQQQ:1, SQQQ:1, TZA:1
+  };
   var RD = { volMaxPct: 80, candles: 400, btcCandles: 200, minCandles: 210, minTurnover: 15000000, trendEma: 200, obvEma: 20, oiCap: 15, readyGood: 65, readyStrong: 80, tfMs: 3600000, concurrency: 5, gapMs: 150 };
   var rdScanning = false;
   var rdRows = [];
@@ -3210,13 +3241,18 @@
   }
 
   function sqzFetchUniverse(){
-    return fetchJson('https://api.bybit.com/v5/market/tickers?category=linear').then(function(d){
+    return Promise.all([
+      fetchJson('https://api.bybit.com/v5/market/tickers?category=linear'),
+      sqzFetchTraditional().catch(function(){ throw new Error('gagal memuat kategori instrumen Bybit (filter saham/ETF) - scan dibatalkan'); })
+    ]).then(function(res){
+      var d = res[0], trad = res[1];
       var list = (d.result && d.result.list) || [];
       var out = [];
       list.forEach(function(i){
         var sym = i.symbol;
         var turnover = parseFloat(i.turnover24h);
-        if (sym && sym.slice(-4) === 'USDT' && isFinite(turnover) && turnover >= SQZ.fetchMinTurnover){
+        if (sym && sym.slice(-4) === 'USDT' && isFinite(turnover) && turnover >= SQZ.fetchMinTurnover
+          && !SQZ_BLACKLIST[sym.slice(0, -4)] && !trad[sym]){
           out.push({ symbol: sym, base: sym.slice(0, -4), turnover: turnover });
         }
       });

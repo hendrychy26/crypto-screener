@@ -515,9 +515,8 @@
 
   <div class="mode-tabs" id="modeTabs">
     <button class="mode-tab active" data-mode="breakout">Breakout</button>
-    <button class="mode-tab" data-mode="accumulation">Accumulation</button>
     <button class="squeeze-tab-btn" id="squeezeTabBtn" type="button"
-            title="Independent panel: 4H EMA(50/100/200) compression scan across liquid Bybit perps. Not part of the Breakout/Accumulation scoring above.">Squeeze</button>
+            title="Independent panel: 4H EMA(50/100/200) compression scan across liquid Bybit perps. Not part of the Breakout scoring above.">Squeeze</button>
     <button class="squeeze-tab-btn" id="radarTabBtn" type="button"
             title="Independent panel: 1H ultra-safe squeeze radar (BTC guard, BB inside KC, dry volume, positive OBV). Mirrors squeeze_radar.py.">Radar</button>
   </div>
@@ -685,7 +684,7 @@
           <input type="checkbox" id="hideIlliquid" checked>
           <span>Hide illiquid</span>
         </label>
-        <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist. Breakout tab: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid. Accumulation tab: deep discount from ATH, near its own low, contracting range, quiet volume, neutral RSI, limited dilution risk, liquid, not still making fresh lows.">
+        <label class="checkbox-field" id="earlyEntryLabel" title="Strict, all-must-pass checklist: tight Donchian range, price in the upper half of it, healthy RSI, hasn't already popped today, trend not down, no 4H/Daily conflict, limited dilution risk, liquid.">
           <input type="checkbox" id="earlyEntryOnly">
           <span id="earlyEntryText">Early Entry only (strict)</span>
         </label>
@@ -780,8 +779,8 @@
             <li><span class="num">⚪ Not yet</span> — no setup or no base formed.</li>
             <li><span class="num">🔴 Avoid</span> — failed breakout, downtrend, or barely trades.</li>
           </ul>
-          Rows sort by verdict, so Ready floats to the top with nothing to configure. On <strong>Breakout</strong> a Ready means the full Tradeable checklist passed; on <strong>Accumulation</strong> it means a valid base that is liquid, not a BTC proxy, with a sane stop — deliberately <em>not</em> requiring regime = TRADE, because accumulating a quiet base during 🟡 CAUTION is the point of that tab. Only 🔴 STAND DOWN blocks it, since building alt positions while BTC breaks down is how you catch a falling knife. Uncheck <strong>Simple view</strong> for the full expert table behind it.</li>
-        <li><strong>Every mode was rebuilt around CoinGecko's richer per-coin data</strong> so the columns answer entry questions directly, instead of proxying them from 50-300 candle bars: <em>is this move confirmed or a wick</em> (7d momentum alongside 24h), <em>is it extended or fresh</em> (real distance from all-time-high, not a 50-bar proxy), <em>is today's push starting or already exhausted</em> (24h range position), and <em>is there a dilution trap waiting</em> (FDV/market-cap ratio). A useful side effect: Breakout mode's score no longer waits on a candle fetch to populate — Score, Read, and most columns are ready the instant tickers load; only Trend, Trend(200), TF Agree, Donch(20) Dist. and Setup still need a moment.</li>
+          Rows sort by verdict, so Ready floats to the top with nothing to configure. A Ready means the full Tradeable checklist passed. Uncheck <strong>Simple view</strong> for the full expert table behind it.</li>
+        <li><strong>Breakout was rebuilt around CoinGecko's richer per-coin data</strong> so the columns answer entry questions directly, instead of proxying them from 50-300 candle bars: <em>is this move confirmed or a wick</em> (7d momentum alongside 24h), <em>is it extended or fresh</em> (real distance from all-time-high, not a 50-bar proxy), <em>is today's push starting or already exhausted</em> (24h range position), and <em>is there a dilution trap waiting</em> (FDV/market-cap ratio). A useful side effect: Breakout's score no longer waits on a candle fetch to populate — Score, Read, and most columns are ready the instant tickers load; only Trend, Trend(200), TF Agree, Donch(20) Dist. and Setup still need a moment.</li>
         <li><strong>Regime badge</strong> (top right) answers one blunt question before you look at a single coin: <em>is this backdrop even worth taking longs in?</em> It reads BTC's own 200 EMA trend plus whether BTC dominance is rising or falling (approximated by comparing BTC's 24h market-cap change against the total crypto market's 24h change, via CoinGecko's <span class="num">/global</span> endpoint), and collapses that into three states — <span class="pill neg" style="font-size:11px;">🔴 STAND DOWN</span> when BTC itself is in a downtrend (most alt longs lose here regardless of setup quality), <span class="pill flat" style="font-size:11px;">🟡 CAUTION</span> when BTC is up but capital is rotating into BTC rather than alts (dominance rising) or the trend is genuinely unclear, and <span class="pill pos" style="font-size:11px;">🟢 TRADE</span> when BTC is up and not starving alts of capital. Hover it for the full reasoning. It doesn't filter or score any row automatically — it's a check to run before trusting a green score, the same way a discretionary trader checks BTC before sizing into an alt.</li>
         <li><strong>TF Agree</strong> compares the primary <span class="num">Candles</span> timeframe's trend against the complementary one (Daily when you're on 4H, or 4H when you're on Daily) — a fresh 4H uptrend that the Daily still disagrees with (⚠) is a much weaker case than one both timeframes confirm (✓). This is exactly the "don't take a 4H long fighting the daily trend" check a discretionary trader runs by eye on two chart tabs; here it's automatic on every row.</li>
         <li><strong>BTC Corr</strong> is this coin's rolling correlation to BTC — bar-over-bar % returns compared over the last ~30 bars at whichever <span class="num">Candles</span> timeframe you're on, not an all-time figure, so it reflects the current regime rather than history. <span class="num">HIGH</span> (≥0.7) means it's mostly moving because BTC is moving; <span class="num">LOW</span> (&lt;0.3) means its moves are largely its own. When correlation is low <em>and</em> the coin's 24h move is the opposite sign of BTC's own 24h move — BTC down while this pushes up, or vice versa — it's flagged <span class="num">🔀</span> as genuinely diverging: real idiosyncratic strength or weakness, not just beta to BTC. Also called out directly in the Read column and searchable via <span class="num">diverging</span>.</li>
@@ -809,21 +808,21 @@
           </ul>
           Passing rows show <span class="num">✅ R:R 2.4</span> with the risk % beneath. Rows that fail show <span class="num">—</span>; <strong>hover it to see exactly which checks blocked it</strong>, which is usually more informative than the pass itself. Note the volume test reads the last <em>completed</em> bar, never the still-forming current one — an early-in-the-day Daily bar always looks artificially quiet.</li>
         <li><strong>Setup</strong> (Breakout tab) is a strict, all-or-nothing pre-breakout checklist, shown as <span class="num">✓ Coiled</span> when every one of these holds: Donchian(20) width ≤10% (tight range), price sitting in the upper half of that range without having already broken out (55-97% channel position), RSI(14) 42-66 (healthy, not overbought or dying), 24h move ≤8% (hasn't already popped), trend not down, no TF Agree conflict, FDV/MCap ≤1.6x (limited dilution risk), and not flagged illiquid.</li>
-        <li>The <strong>"Early Entry only (strict)"</strong> checkbox (relabels itself <strong>"Valid Base only (strict)"</strong> on the Accumulation tab) hides everything that doesn't pass the checklist for whichever tab you're on — Breakout's pre-breakout coil checklist above, or Accumulation's own: ATH drawdown ≤-60% (a real discount, not a dip), within 20% of its own recent low, contracting range (volatility ratio ≤1.0x), quiet volume (Vol/MCap ≤5%), neutral RSI 35-60, limited dilution risk, liquid, and not still making fresh lows. These are deliberately different checklists for different jobs — a small, high-confidence shortlist rather than a soft ranking, because the point of either screen is precision over coverage. A coin still loading its candles is kept visible rather than hidden, the same way the Trend filter works, so the page has something to resolve.</li>
-        <li><strong>Opportunity</strong> is a single 0-100 score folding the checklist above into one number. It drove the old Simple view; that role now belongs to <strong>Verdict</strong>, and this survives as a ranking aid in the expert table. It's <strong>mode-aware</strong> — Breakout and Accumulation compute genuinely different numbers from different inputs (coiled-near-highs vs. deep-and-quiet-base), so switching tabs changes the ranking, not just the label — and both are discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE).
+        <li>The <strong>"Early Entry only (strict)"</strong> checkbox hides everything that doesn't pass Breakout's pre-breakout coil checklist above. It's a small, high-confidence shortlist rather than a soft ranking, because the point of the screen is precision over coverage. A coin still loading its candles is kept visible rather than hidden, the same way the Trend filter works, so the page has something to resolve.</li>
+        <li><strong>Opportunity</strong> is a single 0-100 score folding the checklist above into one number. It drove the old Simple view; that role now belongs to <strong>Verdict</strong>, and this survives as a ranking aid in the expert table. It's discounted by the current Regime verdict (a perfectly coiled coin during 🔴 STAND DOWN reads lower than the same coin would during 🟢 TRADE).
           <ul>
-            <li><span class="num">🟢 Strong Setup</span> / <span class="num">🟢 Strong Base</span> — 75+. High-confidence read; still confirm with the Setup/Valid Base checklist before acting.</li>
-            <li><span class="num">🟡 Building</span> / <span class="num">🟡 Basing</span> — 50-74. Developing, not there yet — worth watching, not yet a trigger.</li>
+            <li><span class="num">🟢 Strong Setup</span> — 75+. High-confidence read; still confirm with the Setup checklist before acting.</li>
+            <li><span class="num">🟡 Building</span> — 50-74. Developing, not there yet — worth watching, not yet a trigger.</li>
             <li><span class="num">⚪ Not Yet</span> — 25-49. Doesn't meet enough of the checklist right now.</li>
             <li><span class="num">🔴 Avoid</span> — below 25, or illiquid/downtrend — floored low regardless of the rest of the inputs.</li>
           </ul>
-          Breakout tab labels: Strong Setup / Building. Accumulation tab labels: Strong Base / Basing. Same four numeric bands and same meaning either way — only the wording changes to match what the tab is actually looking for. Hover the pill for exactly which inputs feed it on the current tab. It's a ranking aid, not a signal — a high score still needs the Setup/Valid Base checklist (or your own chart read) to confirm before acting.</li>
+          Hover the pill for exactly which inputs feed it. It's a ranking aid, not a signal — a high score still needs the Setup checklist (or your own chart read) to confirm before acting.</li>
         <li><strong>Market Cap</strong> and every new field are sourced from CoinGecko's public <span class="num">/coins/markets</span> endpoint (top 1000 coins by cap, refreshed every 5 minutes) with the <span class="num">price_change_percentage</span> extension for 1h/7d/14d/30d/200d/1y momentum. Matched to each row by ticker symbol — a handful of very obscure or newly-listed tickers may show <span class="num">—</span> if CoinGecko doesn't rank them top-1000, or if a symbol collides with an unrelated larger coin sharing the same ticker (rare, resolved in favor of the larger-cap coin).</li>
-        <li><strong>Dist. ATH</strong> is the real, exact distance from the coin's true all-time high (not a 50/300-bar proxy) — hover it for the ATH date. In Breakout mode, closer to 0% (near or at ATH) scores higher under the default weights: it confirms strength, though it also means less room before you're in genuinely new territory with no overhead resistance to reference. In Accumulation mode it's inverted — a deep, old drawdown (e.g. -70%+) is the "classic base" signal the <strong>Deep drawdown from ATH</strong> slider rewards.</li>
-        <li><strong>24h Range Pos.</strong> (Breakout tab) is where the current price sits between today's <span class="num">low_24h</span> and <span class="num">high_24h</span> — 100% means it's printing today's high right now (an active push), 0% means it's sitting at today's low despite a positive score elsewhere (worth checking why). This is intraday entry timing that a single 24h % change can't tell you.</li>
-        <li><strong>FDV/MCap</strong> is fully-diluted valuation divided by current market cap — 1.00x means essentially all supply is already circulating (no dilution overhang); 3.00x means the market cap could effectively triple against you from unlocks alone even if the price never "goes up" in USD terms. This is a risk check, not a timing signal — a tight base with a high FDV/MCap can still be a trap. <strong>Low dilution risk</strong> (Accumulation) rewards ratios near 1.0x.</li>
-        <li><strong>Vol/MCap</strong> replaces raw 24h $ volume everywhere — it normalizes conviction across market-cap sizes (a $50M coin doing $5M volume is louder, relatively, than BTC doing $300M) and is used as the "quiet volume" (Accumulation) / breakout volume signal (Breakout) instead of the old vs-14-day-average surge calculation.</li>
-        <li><strong>7d momentum</strong> sits alongside 24h everywhere in Breakout mode so you can read acceleration: 24h hot but 7d flat reads as an <em>early move</em>; 24h cooling while 7d is still way up reads as <em>cooling off</em> — both called out directly in the Read column.</li>
+        <li><strong>Dist. ATH</strong> is the real, exact distance from the coin's true all-time high (not a 50/300-bar proxy) — hover it for the ATH date. Closer to 0% (near or at ATH) scores higher under the default weights: it confirms strength, though it also means less room before you're in genuinely new territory with no overhead resistance to reference.</li>
+        <li><strong>24h Range Pos.</strong> is where the current price sits between today's <span class="num">low_24h</span> and <span class="num">high_24h</span> — 100% means it's printing today's high right now (an active push), 0% means it's sitting at today's low despite a positive score elsewhere (worth checking why). This is intraday entry timing that a single 24h % change can't tell you.</li>
+        <li><strong>FDV/MCap</strong> is fully-diluted valuation divided by current market cap — 1.00x means essentially all supply is already circulating (no dilution overhang); 3.00x means the market cap could effectively triple against you from unlocks alone even if the price never "goes up" in USD terms. This is a risk check, not a timing signal — a tight base with a high FDV/MCap can still be a trap.</li>
+        <li><strong>Vol/MCap</strong> replaces raw 24h $ volume everywhere — it normalizes conviction across market-cap sizes (a $50M coin doing $5M volume is louder, relatively, than BTC doing $300M) and is used as the breakout volume signal instead of the old vs-14-day-average surge calculation.</li>
+        <li><strong>7d momentum</strong> sits alongside 24h everywhere so you can read acceleration: 24h hot but 7d flat reads as an <em>early move</em>; 24h cooling while 7d is still way up reads as <em>cooling off</em> — both called out directly in the Read column.</li>
         <li><strong>Up to 300 bars of history</strong> for the technicals that still need real candles (RSI, Donchian channel width/position, Range Contraction, TF Agree, the 20-period and 200-period Trend filters) — Crypto.com's raw REST candlestick endpoint returns up to 300 bars per request. At <strong>4H</strong> that's ~50 days; at <strong>Daily</strong> that's ~300 days. Whichever one you pick, TF Agree always fetches the other for the cross-check.</li>
         <li><strong>Trend(200)</strong> (Breakout tab) is a genuine 200-period EMA trend filter — price above a rising 200 EMA is Up, below a falling one is Down. The simpler 20-period <span class="num">Trend</span> column (used everywhere, and as this signal's fallback when a coin has under ~210 bars of history) is unchanged.</li>
         <li><strong>Coverage: Bybit perps Crypto.com doesn't list</strong> — the universe used to be Crypto.com's spot listings filtered to those with a Bybit perp, which silently capped what could ever appear at <span class="num">276</span> of Bybit's <span class="num">761</span> tradeable perps. Measured against CoinGecko's top 1000, <strong>74 of the missing coins clear this screener's own liquidity gates</strong> — BNB, TRX, XMR, KAS, IOTA, DASH, ZEC, MNT, OKB, CAKE, AKE among them. Those now appear, priced and charted from <strong>Bybit</strong>, marked with a small <span class="num">ᴮ</span> next to the ticker (hover any coin name to see which venue its row came from). Bybit also lists hundreds of tokenized equities and stablecoins on the same endpoint, so membership in CoinGecko's top 1000 is the admission test — self-maintaining, unlike a hand-written denylist of 300 stock tickers, and it doubles as the market-cap source those coins need. <strong>Additive by design:</strong> every coin Crypto.com lists keeps its existing record and data source untouched, so if CoinGecko is rate-limited the failure mode is "no new coins", never "no coins". Cross-checked on ETH, SOL and AAVE, both venues produce the same technicals: RSI identical to 0.1, Donchian levels within 0.15%, 200 EMA within 0.03%.</li>
@@ -836,7 +835,7 @@
         <li><strong>Click any coin's name</strong> to open its Bybit USDT-perpetual chart on TradingView in a new tab. This is a different market than the Crypto.com spot price shown in the table, so levels can differ slightly.</li>
         <li><strong>"Hide illiquid"</strong> drops coins doing under <span class="num">$1M</span> of 24h volume <em>across all exchanges</em> (CoinGecko) — genuinely untradeable, whatever the chart looks like. If that figure is unavailable it falls back to the empty-bar test below, so a rate-limited load still fails closed.</li>
         <li><strong>⚠️ Thin bars</strong> is a separate, and more useful, warning: <em>this venue's candles are gappy</em>, not <em>this coin is untradeable</em>. It fires at 3+ empty bars out of 10, on either timeframe — the line is set by how distorted the numbers get, not by how long a bar lasts. <strong>Why it matters:</strong> an empty bar just repeats the previous close, so its true range is exactly 0. Measured on ASTR at 4H, empty bars averaged <span class="num">0.000%</span> range against <span class="num">0.897%</span> on traded bars. That deflates ATR → deflates the stop distance → inflates R:R. The error runs toward "looks better than it is", which is the expensive direction, so a row with thin bars is capped at <span class="num">🟡 Watch</span> and says so, rather than being deleted from the screen. These coins often trade continuously on their Bybit perp — read that chart, not these numbers. Previously both tests were one flag, and switching to 4H made such coins vanish with no explanation.</li>
-        <li><strong>Breakout / Accumulation modes</strong> run two different composite scores over the same live data, each remembering its own weights independently. <strong>Breakout</strong> (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry") blends momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context. <strong>Accumulation</strong> looks for the opposite: coins quietly basing far below their ATH with shrinking volatility, a tight Donchian channel, and low dilution risk.</li>
+        <li><strong>Breakout mode</strong> runs a composite score over the same live data (formerly split across a separate Breakout and Donchian tab — merged into one so there's a single place to manage weights for "is this a valid long entry"), blending momentum, 7d confirmation, relative strength, Vol/MCap conviction, ATH proximity, 24h range position, 200 EMA trend alignment and Donchian breakout proximity into one score, with TF Agree, Trend(200), Donch(20) Dist. and the strict Setup checklist all shown alongside for entry-quality context.</li>
         <li><strong>Position sizing</strong> — enter your <strong>Account $</strong> in the filters panel and every Watch/Ready row gains a line like <span class="num">3,506 ASTR ≈ $21 · stop 5.5% = $1.15 risk · max 6x</span>. The size is <em>derived</em> from the stop — risk budget ÷ stop distance — which inverts the usual mistake of picking a size first and discovering the risk afterwards. <strong>Risk %</strong> defaults to 1% and <strong>Stop ×ATR</strong> to 2.0, matching the validated Donchian system. <strong>This one setting drives everything</strong> — the sizing line, the risk % shown on the row, the R:R, and the stop-width cap — so the R:R you read is always measured against the stop you are told to place. <strong>max Nx</strong> is the leverage ceiling that keeps liquidation outside your stop with a 3× buffer: with a stop in place, leverage doesn't change how much you lose, only how close liquidation sits — at 50x liquidation is ~1.4% away, less than one average 4H bar on most alts, so the stop can never fire. If correct size lands below the exchange minimum, the row says <span class="num">Too small to trade correctly</span> rather than printing an untradeable quantity — at a small account the minimum order on a high-priced coin can itself carry more risk than the rules allow. Account size is stored only in this browser and is never sent anywhere; <span class="num">Reset weights</span> deliberately leaves it alone.</li>
         <li><strong>Background scan</strong> — the screener computes <em>every</em> coin that could appear under your filters, not just the rows on screen: visible rows first so the table fills quickly, then the rest of the list behind them. It used to fetch candles only for visible rows, and that broke <strong>Ready to trade only</strong> in a way that looked like "nothing qualifies": a coin cannot become Ready until it is scanned, and it was only scanned once visible. It was in fact a deadlock — the second timeframe (needed for "timeframes aligned") only loaded while the main scan was idle, which during that churn it never was, so each coin resolved as "timeframes not aligned", was filtered out, and never came back to receive the data that would have cleared it. Now a still-loading timeframe reads <span class="num">other timeframe still loading</span> rather than "not aligned", coins one fetch away from Ready stay in the filtered list and are fetched first, and the second-timeframe queue runs in its own lane instead of waiting for an idle moment that never came. Verified with Ready to trade only ticked from the first paint: the scan completed on its own, and the filtered result matched the unfiltered one coin for coin. The footer shows <span class="num">Scanning X of Y coins</span>, and says <span class="num">Scan complete</span> only once market caps have been attempted — before that the list can still grow as Bybit-only coins are admitted (measured: "complete" at 382 coins, then 430).</li>
         <li><strong>Coin list auto-retry</strong> — the coin list is the one input every row depends on, and it used to be fetched exactly once. If that single request failed — a throttled call, or a patchy mobile connection at the moment the page opened — the page never tried again; prices kept refreshing, so it looked alive while holding zero coins. It now retries on its own (3s, 6s, 12s, 24s, 45s, then every 60s) with a banner saying so, and carries on normally the moment the list lands. Verified by forcing the first two requests to fail: recovered on the third attempt at 9 seconds, with no reload.</li>
@@ -908,40 +907,6 @@
         {key:'score', label:'Score', sortable:true, num:true},
         {key:'hide', label:'', sortable:false}
       ]
-    },
-    accumulation: {
-      metrics: [
-        {key:'distLow',    label:'Proximity to low',        default:20},
-        {key:'volatility', label:'Range contraction',       default:20},
-        {key:'quiet',      label:'Quiet volume (Vol/MCap)', default:15},
-        {key:'rsiNeutral', label:'RSI neutrality',          default:10},
-        {key:'flatMom',    label:'Flat 24h momentum',       default:5},
-        {key:'donchTight', label:'Donchian tightness',      default:10},
-        {key:'edgeProx',   label:'Channel edge proximity',  default:10},
-        {key:'athDrawdown',label:'Deep drawdown from ATH',  default:5},
-        {key:'lowDilution',label:'Low dilution risk',       default:5}
-      ],
-      columns: [
-        {key:'rank', label:'#', sortable:false},
-        {key:'symbol', label:'Coin', sortable:true},
-        {key:'price', label:'Price', sortable:true, num:true},
-        {key:'trend', label:'Trend', sortable:true},
-        {key:'trendAgree', label:'TF Agree', sortable:false},
-        {key:'mom', label:'24h %', sortable:true, num:true},
-        {key:'marketCap', label:'Market Cap', sortable:true, num:true},
-        {key:'athPct', label:'Dist. ATH', sortable:true, num:true},
-        {key:'fdvRatio', label:'FDV/MCap', sortable:true, num:true},
-        {key:'distLow', label:'Dist. Low', sortable:true, num:true},
-        {key:'volatility', label:'Range Contr.', sortable:true, num:true},
-        {key:'volMcap', label:'Vol/MCap', sortable:true, num:true},
-        {key:'rsi14', label:'RSI(14)', sortable:true, num:true},
-        {key:'donchWidth', label:'Donch(20) Width', sortable:true, num:true},
-        {key:'channelPos', label:'Channel Pos.', sortable:true, num:true},
-        {key:'btcCorr', label:'BTC Corr', sortable:true, num:true},
-        {key:'read', label:'Read', sortable:false},
-        {key:'score', label:'Score', sortable:true, num:true},
-        {key:'hide', label:'', sortable:false}
-      ]
     }
   };
 
@@ -966,13 +931,6 @@
       {name:'New ATH Momentum', weights: {mom:10, mom7d:15, rs:5, volMcap:10, athProx:30, rangePos:5, trendAlign:15, donchProx:10}},
       {name:'Strict Trend-Only', weights: {mom:5, mom7d:5, rs:5, volMcap:10, athProx:5, rangePos:5, trendAlign:40, donchProx:25}},
       {name:'Coiled / Early Entry', weights: {mom:5, mom7d:5, rs:10, volMcap:10, athProx:5, rangePos:5, trendAlign:25, donchProx:35}}
-    ],
-    accumulation: [
-      {name:'Balanced', weights: Object.assign({}, DEFAULT_WEIGHTS_BY_MODE.accumulation)},
-      {name:'Strict Base', weights: {distLow:24, volatility:22, quiet:12, rsiNeutral:6, flatMom:4, donchTight:12, edgeProx:8, athDrawdown:8, lowDilution:4}},
-      {name:'Donchian-Aligned Base', weights: {distLow:18, volatility:18, donchTight:18, edgeProx:12, quiet:11, rsiNeutral:5, flatMom:2, athDrawdown:10, lowDilution:6}},
-      {name:'Almost Breakout', weights: {donchTight:25, edgeProx:30, distLow:12, volatility:8, quiet:6, rsiNeutral:2, flatMom:1, athDrawdown:11, lowDilution:5}},
-      {name:'Deep Value Base', weights: {athDrawdown:30, lowDilution:20, distLow:15, volatility:15, quiet:10, rsiNeutral:5, flatMom:3, donchTight:1, edgeProx:1}}
     ]
   };
   function matchingPresetIndex(mode){
@@ -1323,29 +1281,6 @@
     var label = score>=75 ? '🟢 Strong Setup' : (score>=50 ? '🟡 Building' : (score>=25 ? '⚪ Not Yet' : '🔴 Avoid'));
     return {score:score, label:label};
   }
-  // Accumulation's own opportunity score: a completely different shape than Breakout's --
-  // rewards being deep below ATH, quiet, contracting range, and near its own low, instead of
-  // coiled-near-highs. Deliberately produces a DIFFERENT ranking from Breakout's score so the
-  // two tabs actually diverge in Simple View, not just in the full expert table.
-  function computeAccOpportunity(r){
-    if (r.distStatus !== 'ok') return {score:null, label:null};
-    if (r.isIlliquid) return {score:2, label:'🔴 Avoid (illiquid)'};
-
-    var deepAth = r.athPct==null ? 0.4 : clamp01(-r.athPct/85); // -85% or deeper -> 1.0
-    var nearLow = r.distFromLowPct==null ? 0.4 : clamp01(1 - r.distFromLowPct/25); // within 25% of its own low -> high score
-    var contraction = r.volatilityRatio==null ? 0.5 : clamp01(1 - (r.volatilityRatio-0.5)/1.0); // <=0.5 -> 1.0, >=1.5 -> 0
-    var quiet = r.volMcapPct==null ? 0.5 : clamp01(1 - r.volMcapPct/8); // low relative volume -> high score (nobody's noticed yet)
-    var rsi = r.rsi14;
-    var rsiScore = rsi==null ? 0.5 : clamp01(1 - Math.max(0, rsi-60)/25) * clamp01(1 - Math.max(0, 30-rsi)/25); // penalize >60 (already running) and <30 (still falling knife)
-    var dilutionScore = r.fdvRatio == null ? 0.7 : clamp01(1 - (r.fdvRatio-1)/1.5);
-    var notFalling = r.trend === 'down' ? 0.35 : (r.trend === 'mixed' ? 0.7 : 1.0); // a real base shouldn't still be making fresh lows
-
-    var base = deepAth*22 + nearLow*20 + contraction*18 + quiet*15 + rsiScore*12 + dilutionScore*8 + notFalling*5;
-    var score = Math.round(base * regimeMultiplier());
-    var label = score>=75 ? '🟢 Strong Base' : (score>=50 ? '🟡 Basing' : (score>=25 ? '⚪ Not Yet' : '🔴 Avoid'));
-    return {score:score, label:label};
-  }
-
   // ---------- Tradeable tier: "would a professional actually put money on this today?" ----------
   // A deliberately higher bar than the Setup/coil checklist, which only describes SHAPE. This adds
   // the things that decide whether a shape is worth risking capital on: macro backdrop, a stop you
@@ -1462,31 +1397,6 @@
             reducedSize: reducedSize, domDriven: domDriven, domUnknown: domUnknown};
   }
 
-  // Accumulation's equivalent of Tradeable. Deliberately does NOT require regime = TRADE the way
-  // the breakout side does: accumulating a base during 🟡 CAUTION is the whole point of the tab --
-  // you're buying quiet before a move, not chasing one. Only 🔴 STAND DOWN blocks it, because
-  // building alt positions while BTC itself is breaking down is how you catch a falling knife.
-  function evaluateAccTradeable(r, effTrend){
-    if (r.distStatus !== 'ok') return {ok:null, reasons:[]};
-    var why = [];
-    if (r.validAccEntry !== true) why.push('not a valid base yet');
-    if (state.regime.verdict === 'STAND DOWN') why.push('BTC downtrend (stand down)');
-    if (effTrend === 'down') why.push('still making lower lows');
-    var riskPct = null;
-    if (r.atr14 != null && r.price > 0){
-      riskPct = (state.atrMult * r.atr14 / r.price) * 100;   // same multiple as the size calculator
-      if (riskPct > TRADEABLE.maxRiskPctPerAtr * state.atrMult){
-        why.push('stop ' + riskPct.toFixed(1) + '% away');
-      }
-    } else { why.push('no ATR'); }
-    if (r.totalVolume == null) why.push('24h volume unknown');
-    else if (r.totalVolume < TRADEABLE.minDollarVol) why.push('24h volume ' + fmtUsd(r.totalVolume,{compact:true}) + ' (under $5M)');
-    if (r.marketCap == null) why.push('market cap unknown');
-    else if (r.marketCap < TRADEABLE.minMarketCap) why.push('market cap ' + fmtUsd(r.marketCap,{compact:true}) + ' (under $20M)');
-    if (r.btcCorr != null && Math.abs(r.btcCorr) > TRADEABLE.maxBtcCorr) why.push('BTC proxy (corr ' + r.btcCorr.toFixed(2) + ')');
-    return {ok: why.length === 0, reasons: why, riskPct: riskPct};
-  }
-
   // ---------- liquidity vs. data quality: two different questions ----------
   // These used to be one flag, and that was wrong in a way that cost visibility exactly where it
   // mattered. "3+ of the last 10 bars had no trades" was read as "this coin barely trades", then
@@ -1539,23 +1449,18 @@
   }
 
   function computeVerdictCore(r, effTrend){
-    var acc = state.mode === 'accumulation';
     if (r.distStatus !== 'ok') return {rank:-1, label:null, cls:'flat', action:'Loading…'};
     if (r.isIlliquid) return {rank:0, label:'🔴 Avoid', cls:'neg',
       action: r.totalVolume != null
         ? ('Barely trades — ' + fmtUsd(r.totalVolume,{compact:true}) + ' a day across all exchanges')
         : 'Barely trades — skip it'};
 
-    var ready = acc ? (r.accTradeable === true) : (r.tradeable === true);
-    var blockers = acc ? (r.accTradeReasons || []) : (r.tradeReasons || []);
+    var ready = r.tradeable === true;
+    var blockers = r.tradeReasons || [];
     var bs = r.breakoutStatus;
 
     if (ready){
-      var reduced = !acc && r.tradeReduced === true;
-      if (acc){
-        return {rank:4, label:'🟢 Ready', cls:'pos',
-          action:'Valid base — accumulate here; invalid if it breaks its recent low'};
-      }
+      var reduced = r.tradeReduced === true;
       var lvl = bs ? fmtUsd(bs.triggerLevel) : null;
       var base = lvl ? ('must keep closing above ' + lvl) : 'set your stop below the range';
       if (reduced){
@@ -1574,10 +1479,9 @@
     }
 
     // Not ready -- is it close (structure is there, something else blocks) or just not a setup?
-    var structureThere = acc ? (r.validAccEntry === true)
-      : (r.validEarlyEntry === true || (bs && (bs.phase === 'fresh' || bs.phase === 'confirming')));
+    var structureThere = r.validEarlyEntry === true || (bs && (bs.phase === 'fresh' || bs.phase === 'confirming'));
 
-    if (!acc && bs && bs.phase === 'failed'){
+    if (bs && bs.phase === 'failed'){
       return {rank:0, label:'🔴 Avoid', cls:'neg',
         action:'Breakout failed — needs to reclaim ' + fmtUsd(bs.triggerLevel) + ' first'};
     }
@@ -1588,8 +1492,7 @@
       return {rank:2, label:'🟡 Watch', cls:'watch',
         action: blockers.length ? ('Almost — waiting on: ' + blockers[0]) : 'Almost — one check still missing'};
     }
-    return {rank:1, label:'⚪ Not yet', cls:'flat',
-      action: acc ? 'No base formed yet' : 'No setup — nothing to act on'};
+    return {rank:1, label:'⚪ Not yet', cls:'flat', action:'No setup — nothing to act on'};
   }
 
   function computeRows(){
@@ -1715,22 +1618,8 @@
           && !lastRow.isIlliquid
           && (c.rs==null || c.rs>=-3);
         lastRow.validEarlyEntry = passes;
-
-        // Accumulation's own strict gate: deep discount, quiet, contracting, near its own low,
-        // not still making fresh lows, no heavy dilution overhang. A different checklist from
-        // Breakout's on purpose -- this is "valid base to accumulate," not "about to break out."
-        var accPasses = c.athPct!=null && c.athPct<=-60
-          && c.distFromLowPct!=null && c.distFromLowPct<=20
-          && c.volatilityRatio!=null && c.volatilityRatio<=1.0
-          && c.rsi14!=null && c.rsi14>=35 && c.rsi14<=60
-          && (c.volMcapPct==null || c.volMcapPct<=5)
-          && (c.fdvRatio==null || c.fdvRatio<=1.6)
-          && !lastRow.isIlliquid
-          && effTrend !== 'down';
-        lastRow.validAccEntry = accPasses;
       } else {
         lastRow.validEarlyEntry = null; // still loading -- not yet decided, not a fail
-        lastRow.validAccEntry = null;
       }
       // Tradeable runs AFTER validEarlyEntry/breakoutStatus are set -- it consumes both.
       var tr = evaluateTradeable(lastRow, effTrend);
@@ -1741,11 +1630,6 @@
       lastRow.tradeReduced = tr.reducedSize;
       lastRow.tradeDomDriven = tr.domDriven;
       lastRow.tradeDomUnknown = tr.domUnknown;
-
-      var atr = evaluateAccTradeable(lastRow, effTrend);
-      lastRow.accTradeable = atr.ok;
-      lastRow.accTradeReasons = atr.reasons;
-      lastRow.accTradeRiskPct = atr.riskPct;   // same multiple as everywhere else, shown on Accumulation Ready rows
 
       var vd = computeVerdict(lastRow, effTrend);
       lastRow.verdictRank = vd.rank;
@@ -1758,22 +1642,17 @@
       // or the coin is already blocked by something that timeframe cannot fix.
       lastRow.primaryResolved = lastRow.distStatus === 'ok' || lastRow.distStatus === 'error';
       lastRow.altResolved = lastRow.altStatus === 'ok' || lastRow.altStatus === 'error';
-      // Breakout only: Accumulation's gate never reads trendAgree, so it never waits on it.
-      lastRow.awaitingAltOnly = state.mode !== 'accumulation'
-        && lastRow.primaryResolved && !lastRow.altResolved
+      lastRow.awaitingAltOnly = lastRow.primaryResolved && !lastRow.altResolved
         && !!lastRow.tradeReasons && lastRow.tradeReasons.length === 1
         && lastRow.tradeReasons[0] === ALT_PENDING_REASON;
 
       var opp = computeOpportunity(lastRow, effTrend);
       lastRow.opportunityScore = opp.score;
       lastRow.opportunityLabel = opp.label;
-      var accOpp = computeAccOpportunity(lastRow);
-      lastRow.accOpportunityScore = accOpp.score;
-      lastRow.accOpportunityLabel = accOpp.label;
-      // What Simple View actually shows/sorts by -- whichever score matches the active tab.
-      lastRow.simpleOpportunityScore = state.mode === 'accumulation' ? lastRow.accOpportunityScore : lastRow.opportunityScore;
-      lastRow.simpleOpportunityLabel = state.mode === 'accumulation' ? lastRow.accOpportunityLabel : lastRow.opportunityLabel;
-      lastRow.simpleValidEntry = state.mode === 'accumulation' ? lastRow.validAccEntry : lastRow.validEarlyEntry;
+      // What Simple View actually shows/sorts by.
+      lastRow.simpleOpportunityScore = lastRow.opportunityScore;
+      lastRow.simpleOpportunityLabel = lastRow.opportunityLabel;
+      lastRow.simpleValidEntry = lastRow.validEarlyEntry;
     });
     // Lookup by ticker, built BEFORE the filters below: the alert strip has to be able to show
     // the status of a coin you have filtered out of the table (Bybit-only, search, Top N).
@@ -1797,8 +1676,7 @@
     if (state.earlyEntryOnly){
       // Keep unresolved (null) rows visible too, same reasoning as the Trend filter above --
       // otherwise a fully-filtered page never fetches the candles it needs to resolve.
-      // Uses whichever gate matches the active tab -- the pre-breakout coil checklist on
-      // Breakout, the deep-discount-base checklist on Accumulation.
+      // Uses the pre-breakout coil checklist.
       rows = rows.filter(function(r){ return r.simpleValidEntry !== false; });
     }
     // Every coin that could ever appear under the current filters. The background scan works
@@ -1840,39 +1718,7 @@
     }
 
     var w = currentWeights();
-    if (state.mode === 'accumulation'){
-      var rDistLow = percentileRanks(rows, function(r){
-        return r.distFromLowPct==null ? null : -r.distFromLowPct;
-      });
-      var rVolatility = percentileRanks(rows, function(r){
-        return r.volatilityRatio==null ? null : -r.volatilityRatio;
-      });
-      var rQuiet = percentileRanks(rows, function(r){
-        return r.volSurge==null ? null : -r.volSurge;
-      });
-      var rRsiNeutral = percentileRanks(rows, function(r){
-        return r.rsi14==null ? null : -Math.abs(r.rsi14 - 50);
-      });
-      var rFlatMom = percentileRanks(rows, function(r){
-        return r.mom==null ? null : -Math.abs(r.mom);
-      });
-      var rDonchTight = percentileRanks(rows, function(r){
-        return r.donchWidthPct==null ? null : -r.donchWidthPct;
-      });
-      var rEdgeProx = percentileRanks(rows, function(r){
-        if (r.channelPosPct==null) return null;
-        return -Math.min(r.channelPosPct, 100-r.channelPosPct);
-      });
-      // athPct is negative (e.g. -70 = 70% below ATH) -- more negative = deeper drawdown = higher rank.
-      var rAthDrawdown = percentileRanks(rows, function(r){ return r.athPct==null ? null : -r.athPct; });
-      // fdvRatio >=1 always (FDV >= market cap); closer to 1 = little future dilution overhang.
-      var rLowDilution = percentileRanks(rows, function(r){ return r.fdvRatio==null ? null : -r.fdvRatio; });
-      var wSumA = (w.distLow + w.volatility + w.quiet + w.rsiNeutral + w.flatMom + w.donchTight + w.edgeProx + w.athDrawdown + w.lowDilution) || 1;
-      rows.forEach(function(r){
-        var s = (rDistLow[r.base]*w.distLow + rVolatility[r.base]*w.volatility + rQuiet[r.base]*w.quiet + rRsiNeutral[r.base]*w.rsiNeutral + rFlatMom[r.base]*w.flatMom + rDonchTight[r.base]*w.donchTight + rEdgeProx[r.base]*w.edgeProx + rAthDrawdown[r.base]*w.athDrawdown + rLowDilution[r.base]*w.lowDilution) / wSumA;
-        r.score = Math.round(s);
-      });
-    } else {
+    {
       var rMom = percentileRanks(rows, function(r){return r.mom;});
       var rMom7d = percentileRanks(rows, function(r){return r.mom7d;});
       var rRs  = percentileRanks(rows, function(r){return r.rs;});
@@ -2100,9 +1946,7 @@
         if (r.verdictLabel == null){
           tdVerdict.innerHTML = '<span class="spin" title="Checking…"></span>';
         } else {
-          var vTitle = state.mode === 'accumulation'
-            ? 'Ready = a valid base, liquid, not a BTC proxy, sane stop distance, and BTC not in a downtrend. Watch = the base is there but one check still fails. Not yet = no base. Avoid = downtrend or barely trades.'
-            : 'Ready = valid structure, regime TRADE, trend up, timeframes agree, an ATR-scaled stop within the risk cap, R:R at least 2 against that same stop, volume right for its phase, liquid, not a BTC proxy. Watch = structure is there but one check still fails. Not yet = no setup. Avoid = failed breakout or downtrend.';
+          var vTitle = 'Ready = valid structure, regime TRADE, trend up, timeframes agree, an ATR-scaled stop within the risk cap, R:R at least 2 against that same stop, volume right for its phase, liquid, not a BTC proxy. Watch = structure is there but one check still fails. Not yet = no setup. Avoid = failed breakout or downtrend.';
           tdVerdict.innerHTML = '<span class="pill '+r.verdictCls+'" title="'+vTitle+'">'+r.verdictLabel+'</span>';
         }
         tr.appendChild(tdVerdict);
@@ -2117,8 +1961,8 @@
         // in the expert table's Tradeable column. Second line, Ready rows only, so the screen
         // stays a shortlist rather than becoming the expert table again.
         var sizing = [];
-        if (r.tradeRR != null && state.mode !== 'accumulation') sizing.push('R:R ' + r.tradeRR.toFixed(1));
-        var riskSrc = state.mode === 'accumulation' ? r.accTradeRiskPct : r.tradeRiskPct;
+        if (r.tradeRR != null) sizing.push('R:R ' + r.tradeRR.toFixed(1));
+        var riskSrc = r.tradeRiskPct;
         if (riskSrc != null) sizing.push('risk ' + riskSrc.toFixed(1) + '%');
         if (sizing.length && (r.verdictRank === 4 || r.verdictRank === 3)){
           var sizeLine = document.createElement('div');
@@ -2231,105 +2075,7 @@
       tdMom.innerHTML = '<span class="pill '+pctClass(r.mom)+'">'+fmtPct(r.mom)+'</span>';
       tr.appendChild(tdMom);
 
-      if (state.mode === 'accumulation'){
-        var tdMcap = document.createElement('td');
-        tdMcap.className = 'num-col num';
-        tdMcap.textContent = r.marketCap!=null ? fmtUsd(r.marketCap, {compact:true}) : '—';
-        tr.appendChild(tdMcap);
-
-        var tdAthPct = document.createElement('td');
-        tdAthPct.className = 'num-col num';
-        if (r.athPct != null){
-          var athDrawdownCls = r.athPct <= -60 ? 'pos' : (r.athPct >= -20 ? 'neg' : 'flat');
-          tdAthPct.innerHTML = '<span class="pill '+athDrawdownCls+'" title="'+(r.athDate?('ATH was '+new Date(r.athDate).toISOString().slice(0,10)):'')+'">'+r.athPct.toFixed(0)+'%</span>';
-        } else {
-          tdAthPct.innerHTML = '<span class="muted">—</span>';
-        }
-        tr.appendChild(tdAthPct);
-
-        var tdFdv = document.createElement('td');
-        tdFdv.className = 'num-col num';
-        if (r.fdvRatio != null){
-          var fdvCls = r.fdvRatio >= 2 ? 'neg' : (r.fdvRatio <= 1.15 ? 'pos' : 'flat');
-          tdFdv.innerHTML = '<span class="pill '+fdvCls+'" title="Fully diluted valuation vs current market cap -- higher means more future supply overhang">'+r.fdvRatio.toFixed(2)+'x</span>';
-        } else {
-          tdFdv.innerHTML = '<span class="muted">—</span>';
-        }
-        tr.appendChild(tdFdv);
-
-        var tdDistLow = document.createElement('td');
-        tdDistLow.className = 'num-col num';
-        if (r.distStatus === 'ok' && r.distFromLowPct != null){
-          tdDistLow.innerHTML = '+' + r.distFromLowPct.toFixed(1) + '%';
-        } else if (r.distStatus === 'error'){
-          tdDistLow.innerHTML = '<span class="muted">n/a</span>';
-        } else {
-          tdDistLow.innerHTML = '<span class="spin" title="Loading price history…"></span>';
-        }
-        tr.appendChild(tdDistLow);
-
-        var tdVolat = document.createElement('td');
-        tdVolat.className = 'num-col num';
-        if (r.distStatus === 'ok' && r.volatilityRatio != null){
-          tdVolat.innerHTML = '<span class="pill '+(r.volatilityRatio<0.8?'pos':(r.volatilityRatio>1.3?'neg':'flat'))+'">'+r.volatilityRatio.toFixed(2)+'x</span>';
-        } else if (r.distStatus === 'error' || r.volatilityRatio === null){
-          tdVolat.innerHTML = '<span class="muted">n/a</span>';
-        } else {
-          tdVolat.innerHTML = '<span class="spin" title="Loading range history…"></span>';
-        }
-        tr.appendChild(tdVolat);
-
-        var tdQuiet = document.createElement('td');
-        tdQuiet.className = 'num-col num';
-        if (r.volMcapPct != null){
-          tdQuiet.innerHTML = '<span class="pill '+(r.volMcapPct<1?'pos':(r.volMcapPct>5?'neg':'flat'))+'">'+r.volMcapPct.toFixed(1)+'%</span>';
-        } else {
-          tdQuiet.innerHTML = '<span class="muted">—</span>';
-        }
-        tr.appendChild(tdQuiet);
-
-        var tdRsi = document.createElement('td');
-        tdRsi.className = 'num-col num';
-        if (r.distStatus === 'ok' && r.rsi14 != null){
-          var rsiClass = (r.rsi14>=40 && r.rsi14<=55) ? 'pos' : 'flat';
-          tdRsi.innerHTML = '<span class="pill '+rsiClass+'">'+r.rsi14.toFixed(0)+'</span>';
-        } else if (r.distStatus === 'error' || r.rsi14 === null){
-          tdRsi.innerHTML = '<span class="muted">n/a</span>';
-        } else {
-          tdRsi.innerHTML = '<span class="spin" title="Computing RSI…"></span>';
-        }
-        tr.appendChild(tdRsi);
-
-        var tdDonchWidth = document.createElement('td');
-        tdDonchWidth.className = 'num-col num';
-        if (r.distStatus === 'ok' && r.donchWidthPct != null){
-          tdDonchWidth.innerHTML = r.donchWidthPct.toFixed(1) + '%';
-        } else if (r.distStatus === 'error' || r.donchWidthPct === null){
-          tdDonchWidth.innerHTML = '<span class="muted">n/a</span>';
-        } else {
-          tdDonchWidth.innerHTML = '<span class="spin" title="Loading price history…"></span>';
-        }
-        tr.appendChild(tdDonchWidth);
-
-        var tdChanPos = document.createElement('td');
-        tdChanPos.className = 'num-col num';
-        if (r.distStatus === 'ok' && r.channelPosPct != null){
-          var cp = r.channelPosPct;
-          var edgeDist = Math.min(cp, 100-cp);
-          var cpClass = edgeDist<=10 ? 'watch' : 'flat';
-          tdChanPos.innerHTML = '<span class="pill '+cpClass+'" title="0% = at the 20-bar low, 100% = at the 20-bar high">'+cp.toFixed(0)+'%</span>';
-        } else if (r.distStatus === 'error' || r.channelPosPct === null){
-          tdChanPos.innerHTML = '<span class="muted">n/a</span>';
-        } else {
-          tdChanPos.innerHTML = '<span class="spin" title="Loading price history…"></span>';
-        }
-        tr.appendChild(tdChanPos);
-
-        var tdBtcCorrA = document.createElement('td');
-        tdBtcCorrA.className = 'num-col num';
-        tdBtcCorrA.innerHTML = btcCorrCellHtml(r);
-        tr.appendChild(tdBtcCorrA);
-      } else {
+      {
         var tdMom7d = document.createElement('td');
         tdMom7d.className = 'num-col';
         tdMom7d.innerHTML = r.mom7d!=null ? '<span class="pill '+pctClass(r.mom7d)+'">'+fmtPct(r.mom7d)+'</span>' : '<span class="muted">—</span>';
@@ -2749,7 +2495,7 @@
 
   function updateEarlyEntryLabel(){
     var textEl = document.getElementById('earlyEntryText');
-    if (textEl) textEl.textContent = state.mode === 'accumulation' ? 'Valid Base only (strict)' : 'Early Entry only (strict)';
+    if (textEl) textEl.textContent = 'Early Entry only (strict)';
   }
   function setMode(mode){
     state.mode = mode;
@@ -2769,8 +2515,8 @@
   // ---------- Squeeze tab: standalone 4H EMA(50/100/200) compression scan ----------
   // Deliberately NOT wired into MODES/state.mode/computeRows -- it is a separate live scan over
   // Bybit's own linear-perp universe (same source and thresholds as squeeze_scanner.py), rendered
-  // into its own small table. Keeping it standalone means it cannot regress the Breakout/
-  // Accumulation scoring pipeline above, at the cost of not sharing that pipeline's caching,
+  // into its own small table. Keeping it standalone means it cannot regress the Breakout
+  // scoring pipeline above, at the cost of not sharing that pipeline's caching,
   // weights or verdicts -- this tab has none of those, by design.
   var SQZ = {
     fetchMinTurnover: 5000000, // USD floor at SCAN time -- must be <= the lowest Min Turnover
@@ -2812,7 +2558,7 @@
   var sqzFilters = { search:'', maxCompression:3.0, minTurnover:20000000, rvolOnly:false, preset:'all', _presetDist:null };
   var sqzSort = { key:'score', dir:'desc' };  // default = the auto-rank algorithm, not a raw column
 
-  // Filters/sort persist across reloads the same way the Breakout/Accumulation config does
+  // Filters/sort persist across reloads the same way the Breakout config does
   // (localStorage, "_sa" suffix) -- previously every "Scan now" hard-reset to the All Squeeze
   // preset, which is what looked like the panel "resetting" on its own.
   var SQZ_CONFIG_KEY = 'screener_squeeze_config_sa';
@@ -3621,33 +3367,7 @@
     return {short:short, full: fullParts.join(', ') + '.'};
   }
 
-  function narrateAccumulation(r){
-    if (r.distStatus !== 'ok') return {short:'Loading…', full:''};
-    var lowTag = r.distFromLowPct==null ? null : (r.distFromLowPct<=5 ? 'tight to low' : (r.distFromLowPct<=15 ? 'near low' : null));
-    var volatTag = r.volatilityRatio==null ? null : (r.volatilityRatio<0.8 ? 'contracting range' : (r.volatilityRatio>1.3 ? 'expanding range' : null));
-    var quietTag = r.volMcapPct==null ? null : (r.volMcapPct<0.5 ? 'quiet volume' : (r.volMcapPct>5 ? 'getting noticed' : null));
-    var tightTag = r.donchWidthPct==null ? null : (r.donchWidthPct<=8 ? 'coiled channel' : null);
-    var edgeTag = r.channelPosPct==null ? null : (Math.min(r.channelPosPct,100-r.channelPosPct)<=10 ? 'pinned to channel edge' : null);
-    var deepTag = r.athPct==null ? null : (r.athPct<=-70 ? 'deep discount to ATH' : null);
-    var dilutionTag = r.fdvRatio==null ? null : (r.fdvRatio>=2 ? 'heavy future dilution' : null);
-    var divergeTag = r.divergingFromBtc ? (r.mom>0 ? 'diverging from BTC (up while BTC down)' : 'diverging from BTC (down while BTC up)') : null;
-    var parts = [edgeTag, deepTag, divergeTag, lowTag, tightTag, volatTag, quietTag, dilutionTag].filter(Boolean);
-    var short = parts.slice(0,2).join(', ') || 'No clear base yet';
-    var fullParts = [];
-    if (r.distFromLowPct!=null) fullParts.push(r.distFromLowPct.toFixed(1)+'% above its low');
-    if (r.athPct!=null) fullParts.push(r.athPct.toFixed(0)+'% from ATH');
-    if (r.volatilityRatio!=null) fullParts.push('range '+r.volatilityRatio.toFixed(2)+'x recent vs. prior weeks');
-    if (r.volMcapPct!=null) fullParts.push(r.volMcapPct.toFixed(1)+'% vol/mcap');
-    if (r.rsi14!=null) fullParts.push('RSI '+r.rsi14.toFixed(0));
-    if (r.donchWidthPct!=null) fullParts.push('20-bar channel '+r.donchWidthPct.toFixed(1)+'% wide');
-    if (r.channelPosPct!=null) fullParts.push(r.channelPosPct.toFixed(0)+'% up its own channel (0%=low, 100%=high)');
-    if (r.btcCorr!=null) fullParts.push('BTC corr '+(r.btcCorr>=0?'+':'')+r.btcCorr.toFixed(2));
-    if (r.fdvRatio!=null) fullParts.push('FDV '+r.fdvRatio.toFixed(2)+'x market cap');
-    return {short:short, full: fullParts.join(', ') + '.'};
-  }
-
   function narrateRow(r){
-    if (state.mode === 'accumulation') return narrateAccumulation(r);
     return narrateBreakout(r);
   }
 
